@@ -168,12 +168,81 @@ const dayTemplates = {
   ]
 };
 
+const hotelSeed = [
+  {
+    city: "悉尼",
+    name: "Pier One Sydney Harbour",
+    area: "The Rocks / Circular Quay",
+    budget: "约 AUD 330-460 / 晚",
+    reason: "步行到歌剧院和岩石区，适合首次到访建立方位感。",
+    image: "harbor"
+  },
+  {
+    city: "乌鲁鲁",
+    name: "Desert Gardens Hotel",
+    area: "Ayers Rock Resort",
+    budget: "约 AUD 380-520 / 晚",
+    reason: "接驳方便，适合日落观景和文化中心安排。",
+    image: "desert"
+  },
+  {
+    city: "墨尔本",
+    name: "Ovolo Laneways",
+    area: "CBD / Theatre District",
+    budget: "约 AUD 240-360 / 晚",
+    reason: "适合街区探索，去联邦广场、咖啡街区都比较顺。",
+    image: "laneway"
+  },
+  {
+    city: "凯恩斯",
+    name: "Crystalbrook Flynn",
+    area: "Esplanade",
+    budget: "约 AUD 250-390 / 晚",
+    reason: "靠近码头和滨海步道，大堡礁出海当天更省心。",
+    image: "reef"
+  }
+];
+
+const budgetSeed = [
+  { label: "国际/境内交通", amount: "AUD 1,850", note: "含澳洲境内 3 段飞行预估" },
+  { label: "酒店", amount: "AUD 3,420", note: "双人间 9 晚，中高舒适度" },
+  { label: "体验与门票", amount: "AUD 1,260", note: "大堡礁、蓝山、乌鲁鲁、菲利普岛等" },
+  { label: "餐饮与市内交通", amount: "AUD 1,120", note: "按适中餐饮和公共交通估算" }
+];
+
+const attractionIndex = {
+  sydney: [
+    { name: "塔龙加动物园", type: "亲子/动物", duration: "半天", reason: "可从 Circular Quay 坐渡轮抵达，适合补充海港视角。" },
+    { name: "Manly 海滩", type: "海岸", duration: "半天", reason: "比邦迪更松弛，适合作为轻量海岸线替换。" },
+    { name: "新南威尔士美术馆", type: "艺术", duration: "2 小时", reason: "雨天备选，和皇家植物园可以顺路串联。" },
+    { name: "悉尼鱼市场", type: "餐饮", duration: "2 小时", reason: "适合作为午餐点，能增强本地生活感。" }
+  ],
+  uluru: [
+    { name: "Field of Light", type: "夜间体验", duration: "2 小时", reason: "适合加在日落后，增强内陆夜晚记忆点。" },
+    { name: "Mala Walk", type: "轻徒步", duration: "2 小时", reason: "比完整环线轻松，适合第一次到访。" },
+    { name: "直升机观景", type: "高预算体验", duration: "1 小时", reason: "适合预算充足时快速获得地貌视角。" }
+  ],
+  melbourne: [
+    { name: "NGV 维多利亚国家美术馆", type: "艺术", duration: "2-3 小时", reason: "适合雨天或城市留白日，位置很顺。" },
+    { name: "Carlton Gardens", type: "城市散步", duration: "1.5 小时", reason: "可以和博物馆、咖啡街区组合。" },
+    { name: "Brighton 彩虹小屋", type: "海边拍照", duration: "半天", reason: "适合想增加轻松拍照点的人。" },
+    { name: "Yarra River Walk", type: "夜景", duration: "1 小时", reason: "晚餐后低成本补充夜景。" }
+  ],
+  reef: [
+    { name: "Fitzroy Island", type: "海岛", duration: "全天", reason: "可替代常规大堡礁船线，节奏更休闲。" },
+    { name: "Palm Cove", type: "海滨小镇", duration: "半天", reason: "适合返程前轻松散步和午餐。" },
+    { name: "水族馆", type: "雨天备选", duration: "2 小时", reason: "天气影响出海时的低风险替代。" },
+    { name: "Daintree Rainforest", type: "自然", duration: "全天", reason: "如果想强化雨林，可以替换库兰达。" }
+  ]
+};
+
 const state = {
   view: "canvas",
   density: 5,
   collapsed: new Set(["day-4"]),
   activeCanvasDay: null,
   dayEdits: {},
+  docSearch: {},
   route: routeSeed.map((city) => ({ ...city })),
   notes: [
     {
@@ -205,7 +274,7 @@ export function renderHomeScreen(root) {
             ${renderEditorHeader()}
             ${state.view === "canvas" ? renderCanvasQuickPanel() : renderMacroPanel()}
             ${renderActiveView()}
-            ${state.view === "canvas" ? "" : renderNotesPanel()}
+            ${state.view === "map" ? renderNotesPanel() : ""}
           </section>
           ${renderChatPanel()}
         </div>
@@ -247,6 +316,25 @@ export function renderHomeScreen(root) {
 
     if (action === "remove-activity") {
       removeActivity(target.dataset.day, Number(target.dataset.index));
+      render();
+      return;
+    }
+
+    if (action === "add-attraction") {
+      addAttractionToDay(target.dataset.day, target.dataset.name);
+      render();
+      return;
+    }
+
+    if (action === "remove-attraction") {
+      removeAttractionFromDay(target.dataset.day, target.dataset.name);
+      render();
+      return;
+    }
+
+    if (action === "search-attraction") {
+      const input = root.querySelector(`[data-doc-search][data-day="${target.dataset.day}"]`);
+      state.docSearch[target.dataset.day] = input?.value || "";
       render();
       return;
     }
@@ -346,6 +434,11 @@ export function renderHomeScreen(root) {
         target.dataset.activityField,
         target.value
       );
+      return;
+    }
+
+    if (target.matches("[data-doc-search]")) {
+      state.docSearch[target.dataset.day] = target.value;
     }
   };
 
@@ -356,6 +449,12 @@ export function renderHomeScreen(root) {
     if (event.key === "Enter" && event.target.matches(".chat-input")) {
       event.preventDefault();
       sendChatMessage(event.target.value);
+      render();
+    }
+
+    if (event.key === "Enter" && event.target.matches("[data-doc-search]")) {
+      event.preventDefault();
+      state.docSearch[event.target.dataset.day] = event.target.value;
       render();
     }
   });
@@ -549,26 +648,114 @@ function renderCityBlock(city) {
 }
 
 function renderDocumentView() {
+  const days = getPlanDays();
   return `
-    <section class="view-panel document-view" aria-label="文档视图">
-      <div class="doc-header">
-        <div>
-          <p class="eyebrow">Living document</p>
-          <h2>澳洲十日游行程草案</h2>
-        </div>
-        <p>每一天都能像文档标题一样摊开或收缩，也可以在任意段落旁加注释。</p>
-      </div>
-      <div class="day-list">
-        ${getPlanDays().map(renderDaySection).join("")}
-      </div>
+    <section class="view-panel document-view article-view" aria-label="文档视图">
+      <article class="travel-article">
+        <header class="article-hero">
+          <div class="article-hero__copy">
+            <p class="eyebrow">Living travel article</p>
+            <h2>澳洲十日游：第一次到访的完整计划</h2>
+            <p>这是一篇可编辑的图文行程文章。行程、酒店、预算和每天的景点都可以随时插入、删除、修改；当用户想加一个景点时，可以直接在对应日期下智能检索并添加。</p>
+          </div>
+          <div class="article-hero__image travel-image travel-image--reef" aria-hidden="true">
+            <span>AU</span>
+          </div>
+        </header>
+
+        <section class="article-summary-grid" aria-label="行程摘要">
+          <article>
+            <span>总天数</span>
+            <strong>${days.length} 天</strong>
+            <p>悉尼、乌鲁鲁、墨尔本、凯恩斯</p>
+          </article>
+          <article>
+            <span>预算预估</span>
+            <strong>${getBudgetTotal()}</strong>
+            <p>交通、住宿、体验和餐饮</p>
+          </article>
+          <article>
+            <span>推荐节奏</span>
+            <strong>适中</strong>
+            <p>重点日 + 留白日混合</p>
+          </article>
+        </section>
+
+        <section class="article-section">
+          <div class="article-section__head">
+            <div>
+              <p class="eyebrow">Itinerary</p>
+              <h3>每日行程</h3>
+            </div>
+            <p>每一天都是可编辑模块，支持折叠、添加注释、智能插入景点和删除景点。</p>
+          </div>
+          <div class="article-day-list">
+            ${days.map(renderDaySection).join("")}
+          </div>
+        </section>
+
+        <section class="article-section">
+          <div class="article-section__head">
+            <div>
+              <p class="eyebrow">Hotels</p>
+              <h3>酒店建议</h3>
+            </div>
+            <p>酒店以城市动线和首次到访便利性优先，可作为后续比价和替换的候选。</p>
+          </div>
+          <div class="hotel-grid">
+            ${hotelSeed.map(renderHotelCard).join("")}
+          </div>
+        </section>
+
+        <section class="article-section">
+          <div class="article-section__head">
+            <div>
+              <p class="eyebrow">Budget</p>
+              <h3>预算概览</h3>
+            </div>
+            <p>预算块可以作为邮件或方案评审里的摘要，也方便后续接入真实价格。</p>
+          </div>
+          <div class="budget-table">
+            ${budgetSeed.map(renderBudgetRow).join("")}
+          </div>
+        </section>
+      </article>
     </section>
+  `;
+}
+
+function renderHotelCard(hotel) {
+  return `
+    <article class="hotel-card">
+      <div class="hotel-card__image travel-image travel-image--${hotel.image}" aria-hidden="true">
+        <span>${hotel.city.slice(0, 1)}</span>
+      </div>
+      <div class="hotel-card__body">
+        <span>${hotel.city} · ${hotel.area}</span>
+        <h4>${hotel.name}</h4>
+        <strong>${hotel.budget}</strong>
+        <p>${hotel.reason}</p>
+      </div>
+    </article>
+  `;
+}
+
+function renderBudgetRow(item) {
+  return `
+    <article class="budget-row">
+      <div>
+        <strong>${item.label}</strong>
+        <span>${item.note}</span>
+      </div>
+      <em>${item.amount}</em>
+    </article>
   `;
 }
 
 function renderDaySection(day) {
   const collapsed = state.collapsed.has(day.id);
   return `
-    <article class="day-section ${collapsed ? "is-collapsed" : ""}">
+    <article class="day-section article-day ${collapsed ? "is-collapsed" : ""}">
       <button class="day-head" type="button" data-action="toggle-day" data-day="${day.id}">
         <span>${collapsed ? "+" : "-"}</span>
         <strong>D${day.day} ${day.city}</strong>
@@ -579,8 +766,35 @@ function renderDaySection(day) {
           ? ""
           : `
             <div class="day-body">
-              <p>${day.summary}</p>
-              <div class="tag-list">${day.stops.map((stop) => `<span>${stop}</span>`).join("")}</div>
+              <div class="article-day__layout">
+                <div class="article-day__image travel-image travel-image--${day.image}" aria-hidden="true">
+                  <span>D${day.day}</span>
+                </div>
+                <div class="article-day__content">
+                  <label class="article-edit">
+                    <span>标题</span>
+                    <input type="text" value="${escapeAttr(day.title)}" data-day="${day.id}" data-day-field="title" />
+                  </label>
+                  <label class="article-edit">
+                    <span>正文</span>
+                    <textarea rows="3" data-day="${day.id}" data-day-field="summary">${escapeHtml(day.summary)}</textarea>
+                  </label>
+                  <div class="doc-meta-grid">
+                    <span>${escapeHtml(day.transport)}</span>
+                    <span>${escapeHtml(day.stay)}</span>
+                    <span>${escapeHtml(day.pace)}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="doc-attraction-row">
+                ${day.stops.map((stop) => `
+                  <span>
+                    ${escapeHtml(stop)}
+                    <button type="button" data-action="remove-attraction" data-day="${day.id}" data-name="${escapeAttr(stop)}" aria-label="删除 ${escapeAttr(stop)}">×</button>
+                  </span>
+                `).join("")}
+              </div>
+              ${renderSmartAttractionSearch(day)}
               <div class="day-actions">
                 <button type="button" data-action="add-note" data-target="D${day.day} ${day.city}">添加注释</button>
                 <button type="button" data-action="preset" data-preset="${day.cityId}-plus">给${day.city}加一天</button>
@@ -590,6 +804,59 @@ function renderDaySection(day) {
       }
     </article>
   `;
+}
+
+function renderSmartAttractionSearch(day) {
+  const query = state.docSearch[day.id] || "";
+  const candidates = getAttractionCandidates(day, query);
+  return `
+    <div class="smart-insert">
+      <label>
+        <span>智能检索并添加景点</span>
+        <div class="smart-search-row">
+          <input type="text" value="${escapeAttr(query)}" data-doc-search data-day="${day.id}" placeholder="例如：美术馆、海滩、雨天备选" />
+          <button type="button" data-action="search-attraction" data-day="${day.id}">搜索</button>
+        </div>
+      </label>
+      <div class="smart-results">
+        ${candidates
+          .map(
+            (item) => `
+              <article>
+                <div>
+                  <strong>${item.name}</strong>
+                  <span>${item.type} · ${item.duration}</span>
+                  <p>${item.reason}</p>
+                </div>
+                <button type="button" data-action="add-attraction" data-day="${day.id}" data-name="${escapeAttr(item.name)}">添加</button>
+              </article>
+            `
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function getAttractionCandidates(day, query) {
+  const normalizedQuery = query.trim().toLowerCase();
+  const source = attractionIndex[day.cityId] || [];
+  const withoutExisting = source.filter((item) => !day.stops.includes(item.name));
+  const filtered = normalizedQuery
+    ? withoutExisting.filter((item) => {
+        return [item.name, item.type, item.duration, item.reason].some((value) => {
+          return value.toLowerCase().includes(normalizedQuery);
+        });
+      })
+    : withoutExisting;
+  return filtered.slice(0, 3);
+}
+
+function getBudgetTotal() {
+  const total = budgetSeed.reduce((sum, item) => {
+    return sum + Number(item.amount.replace(/[^\d]/g, ""));
+  }, 0);
+  return `AUD ${total.toLocaleString("en-AU")}`;
 }
 
 function renderCanvasView() {
@@ -922,6 +1189,7 @@ function ensureDayEdit(dayId) {
           transport: day.transport,
           stay: day.stay,
           summary: day.summary,
+          stops: [...day.stops],
           schedule: day.schedule.map((activity) => ({ ...activity }))
         }
       : { schedule: [] };
@@ -956,6 +1224,34 @@ function removeActivity(dayId, index) {
     return;
   }
   edit.schedule.splice(index, 1);
+}
+
+function addAttractionToDay(dayId, name) {
+  const day = getPlanDays().find((item) => item.id === dayId);
+  if (!day) return;
+  const attraction = (attractionIndex[day.cityId] || []).find((item) => item.name === name);
+  const edit = ensureDayEdit(dayId);
+  const stops = edit.stops || [...day.stops];
+  if (!stops.includes(name)) stops.push(name);
+  edit.stops = stops;
+  edit.schedule.push({
+    time: "可插入",
+    title: name,
+    detail: attraction ? attraction.reason : "由智能检索添加，可继续调整时间和说明。"
+  });
+  state.docSearch[dayId] = "";
+  state.chat.push({
+    role: "assistant",
+    text: `已把“${name}”加入 D${day.day} ${day.city}，并同步到当天具体安排里。`
+  });
+}
+
+function removeAttractionFromDay(dayId, name) {
+  const day = getPlanDays().find((item) => item.id === dayId);
+  if (!day) return;
+  const edit = ensureDayEdit(dayId);
+  edit.stops = (edit.stops || day.stops).filter((stop) => stop !== name);
+  edit.schedule = edit.schedule.filter((activity) => activity.title !== name);
 }
 
 function sendChatMessage(value) {
