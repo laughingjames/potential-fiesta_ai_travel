@@ -37,10 +37,143 @@ const routeSeed = [
   }
 ];
 
+const dayTemplates = {
+  sydney: [
+    {
+      focus: "抵达与海港地标",
+      pace: "轻松",
+      transport: "机场快线 + 步行",
+      stay: "Circular Quay 附近",
+      image: "harbor",
+      schedule: [
+        { time: "09:30", title: "抵达悉尼", detail: "先把行李放到酒店，确认 Opal 交通卡和电话卡。" },
+        { time: "13:30", title: "歌剧院与海港大桥", detail: "用步行建立城市方位，拍照点安排在 Mrs Macquarie's Chair。" },
+        { time: "18:30", title: "岩石区晚餐", detail: "选海港边轻松餐厅，第一天不安排太满。" }
+      ]
+    },
+    {
+      focus: "海岸线与本地生活",
+      pace: "适中",
+      transport: "公交 + 海岸步道",
+      stay: "悉尼市中心",
+      image: "coast",
+      schedule: [
+        { time: "09:00", title: "邦迪海滩", detail: "从 Bondi 到 Coogee 选一段海岸步道，不强求走完全程。" },
+        { time: "14:00", title: "Paddington / Surry Hills", detail: "咖啡、买手店和街区散步，保留临时替换空间。" },
+        { time: "19:00", title: "达令港", detail: "晚餐后可以沿水边散步，作为城市夜景收尾。" }
+      ]
+    },
+    {
+      focus: "蓝山一日线",
+      pace: "偏满",
+      transport: "火车或包车",
+      stay: "悉尼市中心",
+      image: "mountain",
+      schedule: [
+        { time: "08:00", title: "前往蓝山", detail: "如果同行人怕累，优先包车；公共交通需要更早出发。" },
+        { time: "11:00", title: "三姐妹峰与 Scenic World", detail: "核心点控制在 2-3 个，避免一日线碎片化。" },
+        { time: "17:30", title: "回悉尼", detail: "晚餐不预约太硬，给返程延误留空间。" }
+      ]
+    }
+  ],
+  uluru: [
+    {
+      focus: "内陆日落",
+      pace: "舒缓",
+      transport: "航班 + 酒店接驳",
+      stay: "Ayers Rock Resort",
+      image: "desert",
+      schedule: [
+        { time: "10:30", title: "飞往乌鲁鲁", detail: "抵达后先休息补水，内陆天气变化大。" },
+        { time: "16:30", title: "乌鲁鲁日落观景", detail: "带外套和水，日落后温差明显。" },
+        { time: "20:00", title: "星空晚餐", detail: "如果预算紧张，可替换为度假村内轻餐。" }
+      ]
+    },
+    {
+      focus: "卡塔丘塔与文化中心",
+      pace: "适中",
+      transport: "当地团或自驾",
+      stay: "Ayers Rock Resort",
+      image: "rock",
+      schedule: [
+        { time: "06:00", title: "日出观景", detail: "早起看光线变化，结束后回酒店早餐。" },
+        { time: "10:30", title: "文化中心", detail: "补足原住民文化背景，避免只看地标。" },
+        { time: "15:30", title: "卡塔丘塔轻徒步", detail: "根据体力选择短线，傍晚返回。" }
+      ]
+    }
+  ],
+  melbourne: [
+    {
+      focus: "城市审美与街区",
+      pace: "轻松",
+      transport: "电车 + 步行",
+      stay: "CBD / Southbank",
+      image: "laneway",
+      schedule: [
+        { time: "09:30", title: "联邦广场", detail: "从市中心公共空间开始，顺路看圣保罗教堂。" },
+        { time: "11:00", title: "涂鸦巷与咖啡街区", detail: "安排 2 小时给拍照和咖啡，不急着赶点。" },
+        { time: "16:00", title: "维多利亚市场", detail: "如果当天不开市，替换为 Fitzroy 街区。" }
+      ]
+    },
+    {
+      focus: "大洋路",
+      pace: "偏满",
+      transport: "一日团或包车",
+      stay: "墨尔本 CBD",
+      image: "road",
+      schedule: [
+        { time: "07:30", title: "出发大洋路", detail: "路程长，建议别把晚上安排得太硬。" },
+        { time: "12:30", title: "海岸午餐与观景", detail: "优先十二门徒、Loch Ard Gorge，其他点看时间。" },
+        { time: "20:00", title: "回到墨尔本", detail: "准备简单晚餐或外卖，降低疲劳。" }
+      ]
+    },
+    {
+      focus: "菲利普岛或城市留白",
+      pace: "可选",
+      transport: "自驾 / 一日团",
+      stay: "墨尔本 CBD",
+      image: "penguin",
+      schedule: [
+        { time: "10:00", title: "慢上午", detail: "如果前一天大洋路疲劳，上午不安排固定项目。" },
+        { time: "14:00", title: "前往菲利普岛", detail: "看企鹅归巢；若天气差，改为美术馆和河岸散步。" },
+        { time: "21:30", title: "返回酒店", detail: "这天重点是可替换，不追求满行程。" }
+      ]
+    }
+  ],
+  reef: [
+    {
+      focus: "大堡礁出海",
+      pace: "偏满",
+      transport: "船",
+      stay: "Cairns Esplanade",
+      image: "reef",
+      schedule: [
+        { time: "08:00", title: "码头集合", detail: "提前确认晕船药、泳衣、毛巾和防晒。" },
+        { time: "10:30", title: "浮潜或玻璃底船", detail: "不强迫深潜，给不同体力的人留选择。" },
+        { time: "17:00", title: "滨海步道", detail: "出海后不安排复杂交通，轻松收尾。" }
+      ]
+    },
+    {
+      focus: "雨林与返程缓冲",
+      pace: "舒缓",
+      transport: "缆车 / 火车",
+      stay: "返程或机场附近",
+      image: "rainforest",
+      schedule: [
+        { time: "09:00", title: "库兰达雨林", detail: "用缆车或观光火车串联，减少步行压力。" },
+        { time: "14:30", title: "凯恩斯市区补给", detail: "买伴手礼、整理照片和账单。" },
+        { time: "18:00", title: "返程准备", detail: "预留打包和机场交通时间。" }
+      ]
+    }
+  ]
+};
+
 const state = {
-  view: "map",
+  view: "canvas",
   density: 5,
   collapsed: new Set(["day-4"]),
+  activeCanvasDay: null,
+  dayEdits: {},
   route: routeSeed.map((city) => ({ ...city })),
   notes: [
     {
@@ -70,9 +203,9 @@ export function renderHomeScreen(root) {
         <div class="workspace">
           <section class="editor-pane">
             ${renderEditorHeader()}
-            ${renderMacroPanel()}
+            ${state.view === "canvas" ? renderCanvasQuickPanel() : renderMacroPanel()}
             ${renderActiveView()}
-            ${renderNotesPanel()}
+            ${state.view === "canvas" ? "" : renderNotesPanel()}
           </section>
           ${renderChatPanel()}
         </div>
@@ -89,6 +222,31 @@ export function renderHomeScreen(root) {
 
     if (action === "set-view") {
       state.view = target.dataset.view;
+      state.activeCanvasDay = null;
+      render();
+      return;
+    }
+
+    if (action === "open-day") {
+      state.activeCanvasDay = target.dataset.day;
+      render();
+      return;
+    }
+
+    if (action === "close-day") {
+      state.activeCanvasDay = null;
+      render();
+      return;
+    }
+
+    if (action === "add-activity") {
+      addActivity(target.dataset.day);
+      render();
+      return;
+    }
+
+    if (action === "remove-activity") {
+      removeActivity(target.dataset.day, Number(target.dataset.index));
       render();
       return;
     }
@@ -173,6 +331,21 @@ export function renderHomeScreen(root) {
       const note = state.notes.find((item) => item.id === target.dataset.note);
       if (note) note.size = target.value;
       render();
+      return;
+    }
+
+    if (target.matches("[data-day-field]")) {
+      updateDayField(target.dataset.day, target.dataset.dayField, target.value);
+      return;
+    }
+
+    if (target.matches("[data-activity-field]")) {
+      updateActivityField(
+        target.dataset.day,
+        Number(target.dataset.index),
+        target.dataset.activityField,
+        target.value
+      );
     }
   };
 
@@ -207,9 +380,9 @@ function renderTopbar() {
 
 function renderEditorHeader() {
   const views = [
+    ["canvas", "画布视图"],
     ["map", "地图视图"],
-    ["doc", "文档视图"],
-    ["canvas", "画布视图"]
+    ["doc", "文档视图"]
   ];
 
   return `
@@ -269,6 +442,27 @@ function renderMacroPanel() {
       </div>
       <div class="city-day-grid">
         ${state.route.map(renderCityStepper).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderCanvasQuickPanel() {
+  return `
+    <section class="canvas-quick-panel" aria-label="画布快速调整">
+      <div class="canvas-quick-panel__title">
+        <p class="eyebrow">Canvas controls</p>
+        <strong>${getTotalDays()} 天澳洲行程</strong>
+      </div>
+      <label class="quick-density">
+        <span>景点密度 ${state.density}/8</span>
+        <input class="density-range" type="range" min="3" max="8" value="${state.density}" />
+      </label>
+      <div class="preset-row">
+        <button type="button" data-action="preset" data-preset="sydney-plus">悉尼加一天</button>
+        <button type="button" data-action="preset" data-preset="melbourne-plus">墨尔本加一天</button>
+        <button type="button" data-action="preset" data-preset="relax">降低密度</button>
+        <button type="button" data-action="preset" data-preset="coast">强化海岸线</button>
       </div>
     </section>
   `;
@@ -399,36 +593,130 @@ function renderDaySection(day) {
 }
 
 function renderCanvasView() {
+  const days = getPlanDays();
+  const activeDay = days.find((day) => day.id === state.activeCanvasDay);
+
+  if (activeDay) return renderCanvasDayDetail(activeDay);
+
   return `
-    <section class="view-panel canvas-view" aria-label="画布视图">
-      <div class="canvas-board">
-        ${state.route.map(renderCanvasCity).join("")}
-        ${state.notes.map(renderCanvasNote).join("")}
+    <section class="view-panel canvas-view canvas-overview" aria-label="画布视图">
+      <div class="canvas-toolbar">
+        <div>
+          <p class="eyebrow">Notion-like canvas</p>
+          <h2>澳洲十日游每日看板</h2>
+          <p>先平铺看到 D1-D10 的关键安排。点击任意一天进入详情，所有标题、节奏、交通和时间段都可以直接编辑。</p>
+        </div>
+        <div class="canvas-toolbar__meta">
+          <span>${days.length} 天</span>
+          <span>${state.notes.length} 条注释</span>
+        </div>
+      </div>
+      <div class="day-card-grid">
+        ${days.map(renderCanvasDayCard).join("")}
       </div>
     </section>
   `;
 }
 
-function renderCanvasCity(city, index) {
-  const collapsed = state.collapsed.has(`city-${city.id}`);
-  const width = Math.max(150, 112 + city.days * 30);
+function renderCanvasDayCard(day) {
   return `
-    <article class="canvas-node ${collapsed ? "is-collapsed" : ""}" style="--city-color: ${city.color}; --node-width: ${width}px;">
-      <button class="canvas-node__head" type="button" data-action="toggle-city" data-city="${city.id}">
-        <span>${index + 1}</span>
-        <strong>${city.city}</strong>
-        <em>${city.days} 天</em>
+    <article class="day-card" style="--city-color: ${day.color};">
+      <button class="day-card__open" type="button" data-action="open-day" data-day="${day.id}" aria-label="打开 D${day.day} ${day.city}">
+        <div class="day-card__image travel-image travel-image--${day.image}" role="img" aria-label="${day.city} ${day.focus} 图片">
+          <span>D${day.day}</span>
+        </div>
+        <div class="day-card__body">
+          <div class="day-card__head">
+            <span>${day.city}</span>
+            <em>${day.pace}</em>
+          </div>
+          <h3>${escapeHtml(day.title)}</h3>
+          <p>${escapeHtml(day.summary)}</p>
+          <div class="info-strip">
+            <span>${escapeHtml(day.transport)}</span>
+            <span>${escapeHtml(day.stay)}</span>
+          </div>
+          <div class="tag-list">${day.stops.slice(0, 3).map((stop) => `<span>${escapeHtml(stop)}</span>`).join("")}</div>
+        </div>
       </button>
-      ${
-        collapsed
-          ? ""
-          : `
-            <div class="canvas-node__body">
-              <p>${city.intent}</p>
-              <div class="mini-days">${Array.from({ length: city.days }, (_, day) => `<span>D${day + 1}</span>`).join("")}</div>
+    </article>
+  `;
+}
+
+function renderCanvasDayDetail(day) {
+  return `
+    <section class="view-panel canvas-view day-detail-view" aria-label="单日详情">
+      <div class="day-detail-head">
+        <button class="button button--ghost" type="button" data-action="close-day">返回画布</button>
+        <div>
+          <p class="eyebrow">Editable day plan</p>
+          <h2>D${day.day} ${day.city}</h2>
+        </div>
+        <button class="button button--primary" type="button" data-action="add-note" data-target="D${day.day} ${day.city}">给当天加注释</button>
+      </div>
+      <div class="day-detail-layout">
+        <aside class="day-detail-side">
+          <div class="detail-cover travel-image travel-image--${day.image}" role="img" aria-label="${day.city} ${day.focus} 图片">
+            <span>D${day.day}</span>
+          </div>
+          <label class="edit-field">
+            <span>当天标题</span>
+            <input type="text" value="${escapeAttr(day.title)}" data-day="${day.id}" data-day-field="title" />
+          </label>
+          <label class="edit-field">
+            <span>节奏</span>
+            <select data-day="${day.id}" data-day-field="pace">
+              ${["舒缓", "轻松", "适中", "偏满", "可选"].map((pace) => `<option value="${pace}" ${day.pace === pace ? "selected" : ""}>${pace}</option>`).join("")}
+            </select>
+          </label>
+          <label class="edit-field">
+            <span>交通</span>
+            <input type="text" value="${escapeAttr(day.transport)}" data-day="${day.id}" data-day-field="transport" />
+          </label>
+          <label class="edit-field">
+            <span>住宿 / 落点</span>
+            <input type="text" value="${escapeAttr(day.stay)}" data-day="${day.id}" data-day-field="stay" />
+          </label>
+          <label class="edit-field">
+            <span>当天摘要</span>
+            <textarea rows="4" data-day="${day.id}" data-day-field="summary">${escapeHtml(day.summary)}</textarea>
+          </label>
+        </aside>
+        <main class="day-detail-main">
+          <div class="detail-section-title">
+            <div>
+              <p class="eyebrow">Timeline</p>
+              <h3>每日具体安排</h3>
             </div>
-          `
-      }
+            <button class="button button--ghost" type="button" data-action="add-activity" data-day="${day.id}">添加时间段</button>
+          </div>
+          <div class="activity-list">
+            ${day.schedule.map((activity, index) => renderActivityEditor(day.id, activity, index)).join("")}
+          </div>
+          <div class="detail-section-title">
+            <div>
+              <p class="eyebrow">Key places</p>
+              <h3>关键信息</h3>
+            </div>
+          </div>
+          <div class="detail-facts">
+            ${day.stops.map((stop) => `<span>${escapeHtml(stop)}</span>`).join("")}
+          </div>
+        </main>
+      </div>
+    </section>
+  `;
+}
+
+function renderActivityEditor(dayId, activity, index) {
+  return `
+    <article class="activity-editor">
+      <input class="activity-time" type="text" value="${escapeAttr(activity.time)}" data-day="${dayId}" data-index="${index}" data-activity-field="time" aria-label="时间" />
+      <div class="activity-fields">
+        <input type="text" value="${escapeAttr(activity.title)}" data-day="${dayId}" data-index="${index}" data-activity-field="title" aria-label="安排标题" />
+        <textarea rows="2" data-day="${dayId}" data-index="${index}" data-activity-field="detail" aria-label="安排详情">${escapeHtml(activity.detail)}</textarea>
+      </div>
+      <button type="button" data-action="remove-activity" data-day="${dayId}" data-index="${index}" aria-label="删除时间段">删除</button>
     </article>
   `;
 }
@@ -520,25 +808,49 @@ function getPlanDays() {
 
   state.route.forEach((city) => {
     for (let day = 0; day < city.days; day += 1) {
+      const template = getDayTemplate(city.id, day);
       const stopCount = Math.min(city.stops.length, Math.max(2, state.density - 2));
       const startIndex = (day * 2) % city.stops.length;
       const availableStops = Array.from({ length: stopCount }, (_, index) => {
         return city.stops[(startIndex + index) % city.stops.length];
       });
-      days.push({
+      const baseDay = {
         id: `day-${dayNumber}`,
         day: dayNumber,
         city: city.city,
         cityId: city.id,
-        title: day === 0 ? `${city.intent}` : `${city.city}深入与弹性安排`,
+        color: city.color,
+        image: template.image,
+        focus: template.focus,
+        pace: template.pace,
+        transport: template.transport,
+        stay: template.stay,
+        title: template.focus,
         summary: buildDaySummary(city, day, availableStops),
-        stops: availableStops
-      });
+        stops: availableStops,
+        schedule: template.schedule.map((activity) => ({ ...activity }))
+      };
+      days.push(applyDayEdit(baseDay));
       dayNumber += 1;
     }
   });
 
   return days;
+}
+
+function getDayTemplate(cityId, dayIndex) {
+  const templates = dayTemplates[cityId] || dayTemplates.sydney;
+  return templates[dayIndex % templates.length];
+}
+
+function applyDayEdit(baseDay) {
+  const edit = state.dayEdits[baseDay.id];
+  if (!edit) return baseDay;
+  return {
+    ...baseDay,
+    ...edit,
+    schedule: edit.schedule ? edit.schedule.map((activity) => ({ ...activity })) : baseDay.schedule
+  };
 }
 
 function buildDaySummary(city, dayIndex, stops) {
@@ -598,6 +910,52 @@ function addNote(target = "当前行程") {
     size: "medium",
     text: "写下注释，拖动右下角可以调整文本框大小。"
   });
+}
+
+function ensureDayEdit(dayId) {
+  if (!state.dayEdits[dayId]) {
+    const day = getPlanDays().find((item) => item.id === dayId);
+    state.dayEdits[dayId] = day
+      ? {
+          title: day.title,
+          pace: day.pace,
+          transport: day.transport,
+          stay: day.stay,
+          summary: day.summary,
+          schedule: day.schedule.map((activity) => ({ ...activity }))
+        }
+      : { schedule: [] };
+  }
+  return state.dayEdits[dayId];
+}
+
+function updateDayField(dayId, field, value) {
+  const edit = ensureDayEdit(dayId);
+  edit[field] = value;
+}
+
+function updateActivityField(dayId, index, field, value) {
+  const edit = ensureDayEdit(dayId);
+  if (!edit.schedule[index]) return;
+  edit.schedule[index][field] = value;
+}
+
+function addActivity(dayId) {
+  const edit = ensureDayEdit(dayId);
+  edit.schedule.push({
+    time: "待定",
+    title: "新的安排",
+    detail: "补充交通、时长、预订和替代方案。"
+  });
+}
+
+function removeActivity(dayId, index) {
+  const edit = ensureDayEdit(dayId);
+  if (edit.schedule.length <= 1) {
+    showToast("至少保留一个时间段");
+    return;
+  }
+  edit.schedule.splice(index, 1);
 }
 
 function sendChatMessage(value) {
@@ -662,4 +1020,8 @@ function escapeHtml(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replaceAll("'", "&#39;");
 }
