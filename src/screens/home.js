@@ -8981,7 +8981,7 @@ function renderCalendarWorkspaceView() {
   const selectedPlanDay = selectedDate ? tripIndex.get(selectedDate) : null;
 
   return `
-    <section class="calendar-shell ${state.calendar.mapExpanded ? "calendar-shell--map-expanded" : ""}" aria-label="日历工作台">
+    <section class="calendar-shell" aria-label="日历工作台">
       <div class="calendar-shell__workspace">
         ${renderChatPanel()}
         <section class="calendar-shell__main">
@@ -8997,11 +8997,8 @@ function renderCalendarWorkspaceView() {
 
 function renderCalendarMapRail(activeDay) {
   return `
-    <aside class="calendar-map-rail" aria-label="日历地图">
-      <div class="calendar-map-rail__inner">
-        <button class="calendar-map-toggle" type="button" data-action="toggle-calendar-map" aria-label="${state.calendar.mapExpanded ? "收起地图" : "展开地图"}">
-          ${state.calendar.mapExpanded ? "收起地图" : "展开地图"}
-        </button>
+    <aside class="calendar-map-rail trip-map-rail" aria-label="日历地图">
+      <div class="calendar-map-rail__inner trip-map-rail__inner">
         ${renderAmapMcpMapStage({ embedded: true })}
       </div>
     </aside>
@@ -12380,13 +12377,13 @@ function renderUltimateView() {
     : days[Math.min(2, days.length - 1)];
 
   return `
-    <section class="ultimate-view ultimate-view--${escapeAttr(mode)} ${state.ultimateMapExpanded ? "ultimate-view--map-expanded" : ""}" aria-label="终极视图">
+    <section class="ultimate-view ultimate-view--${escapeAttr(mode)}" aria-label="终极视图">
       <div class="ultimate-workspace ultimate-workspace--${escapeAttr(mode)}">
         ${renderUltimateChatPanel()}
         <section class="ultimate-canvas">
           ${renderUltimateCanvas(days, activeDay, mode)}
         </section>
-        <aside class="ultimate-rail">${renderUltimateRail(activeDay, days)}</aside>
+        <aside class="ultimate-rail trip-map-rail" aria-label="终极视图地图">${renderUltimateRail(activeDay, days)}</aside>
         ${state.activeBooking ? `<div class="ultimate-booking-panel">${renderBookingRail()}</div>` : ""}
       </div>
     </section>
@@ -12472,8 +12469,14 @@ function renderUltimateOverviewBoard(days, activeDay) {
     ? state.ultimateExpandedDays
     : new Set();
   return `
-    <div class="ultimate-day-cards" aria-label="终极行程总览">
-      ${days.map((day) => renderUltimateDayCard(day, expandedDays.has(day.id))).join("")}
+    <div class="ultimate-overview-board">
+      <div class="ultimate-day-cards" aria-label="终极行程总览">
+        ${days.map((day) => renderUltimateDayCard(day, expandedDays.has(day.id))).join("")}
+      </div>
+      <div class="ultimate-canvas__extras" aria-label="行程补充信息">
+        ${renderCanvasGuideCards(days)}
+        ${renderCanvasBottomBoard(days)}
+      </div>
     </div>
   `;
 }
@@ -12856,13 +12859,8 @@ function getUltimateDayCardTitle(day) {
 
 function renderUltimateRail(activeDay, days) {
   return `
-    <div class="ultimate-rail__inner">
-      <div class="ultimate-rail__map">
-        <button class="ultimate-map-toggle" type="button" data-action="toggle-ultimate-map" aria-label="${state.ultimateMapExpanded ? "收起地图" : "展开地图"}">
-          ${state.ultimateMapExpanded ? "收起地图" : "展开地图"}
-        </button>
-        ${renderAmapMcpMapStage({ embedded: true })}
-      </div>
+    <div class="ultimate-rail__inner trip-map-rail__inner">
+      ${renderAmapMcpMapStage({ embedded: true })}
     </div>
   `;
 }

@@ -2018,4 +2018,10 @@ function listen(port) {
   });
 }
 
-listen(preferredPort);
+const serverlessServer = createAppServer();
+
+export default serverlessServer;
+
+if (!process.env.VERCEL) {
+  listen(preferredPort);
+}
