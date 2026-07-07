@@ -326,6 +326,38 @@ strong {
   line-height: 1.45;
 }
 
+.booking-context-card {
+  display: grid;
+  gap: 8px;
+  margin: -2px 0 2px;
+  border: 1px solid rgba(0, 168, 107, 0.12);
+  border-radius: 14px;
+  padding: 10px 11px;
+  background: linear-gradient(180deg, rgba(235, 250, 243, 0.86), rgba(255, 255, 255, 0.92));
+}
+
+.booking-context-card p {
+  margin: 0;
+  color: #2f473b;
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.booking-context-card div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.booking-context-card span {
+  border-radius: 999px;
+  padding: 4px 7px;
+  color: #087b54;
+  background: rgba(0, 168, 107, 0.09);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
 .booking-group__title,
 .flyai-booking-card__head,
 .flyai-booking-card__actions {
@@ -409,6 +441,35 @@ strong {
   line-height: 1.5;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.flyai-booking-card__reason {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 10px;
+  border-radius: 12px;
+  padding: 9px 10px;
+  background: rgba(247, 250, 245, 0.95);
+}
+
+.flyai-booking-card__reason strong {
+  color: #526a46;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.flyai-booking-card__reason p {
+  display: block;
+  margin: 0;
+  color: #344239;
+  font-size: 0.76rem;
+  line-height: 1.55;
+  -webkit-line-clamp: unset;
+}
+
+.flyai-booking-card--hotel .flyai-booking-card__tags span {
+  color: #526a46;
+  background: rgba(82, 106, 70, 0.1);
 }
 
 .flyai-booking-card__tags {
@@ -878,8 +939,22 @@ strong {
 }
 
 .zoom-workspace__controls .zoom-workspace__value {
-  width: 50px;
+  width: 0;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  transform: scale(0.86);
+  overflow: hidden;
+  pointer-events: none;
   font-size: 0.72rem;
+  transition: width 0.22s ease, margin 0.22s ease, padding 0.22s ease, opacity 0.18s ease, transform 0.22s ease;
+}
+
+.zoom-workspace__controls .zoom-workspace__value.is-visible {
+  width: 50px;
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
 }
 
 .zoom-workspace__divider {
@@ -2839,7 +2914,9 @@ strong {
 }
 
 .free-note-card--memo p {
-  min-height: 160px;
+  width: 170px;
+  height: 140px;
+  min-height: 0;
   margin: 0;
   background-image: linear-gradient(to bottom, transparent calc(100% - 1px), rgba(155, 127, 44, 0.16) 1px);
   background-size: 100% 32px;
@@ -8200,7 +8277,7 @@ button.booking-chip.is-pending {
 
 .chat-pane {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   height: 100%;
   min-height: 0;
 }
@@ -11161,7 +11238,7 @@ body {
 
 .canvas-trip-header {
   grid-template-columns: minmax(0, 0.95fr) minmax(360px, 1.05fr);
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   column-gap: 32px;
   row-gap: 0;
   min-height: 0;
@@ -13559,7 +13636,7 @@ body {
 
 .ultimate-chat.chat-pane {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   height: 100%;
   min-height: 0;
   border: 0;
@@ -14147,9 +14224,9 @@ body {
 
 .ultimate-itinerary-card {
   display: grid;
-  grid-template-columns: minmax(220px, 38%) minmax(0, 1fr);
-  gap: clamp(18px, 3vw, 34px);
-  align-items: stretch;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: clamp(16px, 2.4vw, 26px);
+  align-items: start;
   overflow: hidden;
   border: 1px solid rgba(46, 70, 55, 0.1);
   border-radius: 10px;
@@ -14160,7 +14237,9 @@ body {
 
 .ultimate-itinerary-card__media {
   position: relative;
-  min-height: 190px;
+  width: 170px;
+  height: 140px;
+  min-height: 0;
   margin: 0;
   overflow: hidden;
   border-radius: 8px;
@@ -14172,7 +14251,7 @@ body {
 .ultimate-itinerary-card__image .travel-image__img {
   width: 100%;
   height: 100%;
-  min-height: 190px;
+  min-height: 0;
   object-fit: cover;
 }
 
@@ -14215,6 +14294,25 @@ body {
   font-size: 1.18rem;
   font-style: normal;
   font-weight: 950;
+}
+
+
+.ultimate-itinerary-card[draggable="true"] {
+  cursor: grab;
+  transition: opacity 0.16s ease, transform 0.16s ease, outline-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.ultimate-itinerary-card.is-dragging {
+  opacity: 0.5;
+  transform: scale(0.985);
+  cursor: grabbing;
+}
+
+.ultimate-itinerary-card.is-poi-drop-target {
+  outline: 2px dashed rgba(7, 87, 255, 0.5);
+  outline-offset: 5px;
+  transform: translateY(5px);
+  box-shadow: 0 20px 46px rgba(7, 87, 255, 0.14);
 }
 
 .ultimate-itinerary-card__body {
@@ -14806,16 +14904,15 @@ body {
   }
 }
 
-/* Shared right-side map rail for Ultimate / Calendar / Free View 2 */
+/* Shared right-side map rail for Ultimate / Calendar.
+   Free View keeps the base .free2-map-rail rules above. */
 .ultimate-workspace--overview,
-.calendar-shell .calendar-shell__workspace,
-.free2-shell__workspace {
+.calendar-shell .calendar-shell__workspace {
   grid-template-columns: 320px minmax(0, 1fr) 320px !important;
 }
 
 .ultimate-rail,
-.calendar-map-rail,
-.free2-map-rail {
+.calendar-map-rail {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -14828,8 +14925,7 @@ body {
 
 .ultimate-rail__inner,
 .ultimate-rail__map,
-.calendar-map-rail__inner,
-.free2-map-rail__inner {
+.calendar-map-rail__inner {
   position: relative;
   height: 100%;
   min-height: 100%;
@@ -14837,8 +14933,7 @@ body {
 }
 
 .ultimate-rail__map .map-stage,
-.calendar-map-rail .map-stage,
-.free2-map-rail .map-stage {
+.calendar-map-rail .map-stage {
   height: 100%;
   min-height: 100%;
   border-radius: 0;
@@ -14847,9 +14942,7 @@ body {
 .ultimate-rail__map .amap-real-map,
 .ultimate-rail__map .custom-map-canvas,
 .calendar-map-rail .amap-real-map,
-.calendar-map-rail .custom-map-canvas,
-.free2-map-rail .amap-real-map,
-.free2-map-rail .custom-map-canvas {
+.calendar-map-rail .custom-map-canvas {
   height: 100% !important;
   min-height: 100% !important;
 }
@@ -14868,14 +14961,7 @@ body {
 .calendar-map-rail .amap-real-attribution,
 .calendar-map-rail .map-poi-sheet,
 .calendar-map-rail .amap-mcp-attribution,
-.calendar-map-rail .amap-mcp-state,
-.free2-map-rail .map-planner-controls,
-.free2-map-rail .custom-map-legend,
-.free2-map-rail .amap-real-state,
-.free2-map-rail .amap-real-attribution,
-.free2-map-rail .map-poi-sheet,
-.free2-map-rail .amap-mcp-attribution,
-.free2-map-rail .amap-mcp-state {
+.calendar-map-rail .amap-mcp-state {
   display: none !important;
 }
 
@@ -14938,17 +15024,18 @@ body {
 }
 
 
-/* Final shared right-side map rail parity: Free View 2 / Calendar / Ultimate */
+/* Final shared right-side map rail parity: all right-side map rails except the pending/canvas preview.
+   Do not apply rail sizing to .free2-map-rail globally: its own grid column keeps Free View from covering the canvas. */
 .calendar-shell .calendar-shell__workspace,
-.free2-shell__workspace,
+.free2-shell .free2-shell__workspace,
+.doc-shell .doc-shell__workspace,
 .ultimate-workspace--overview {
   grid-template-columns: 320px minmax(0, 1fr) 320px !important;
 }
 
 .trip-map-rail,
 .ultimate-rail.trip-map-rail,
-.calendar-map-rail.trip-map-rail,
-.free2-map-rail {
+.calendar-map-rail.trip-map-rail {
   min-width: 0 !important;
   min-height: 0 !important;
   height: 100% !important;
@@ -14963,9 +15050,7 @@ body {
 
 .trip-map-rail__inner,
 .trip-map-rail > .map-stage,
-.trip-map-rail .map-stage,
-.free2-map-rail__inner,
-.free2-map-rail .map-stage {
+.trip-map-rail .map-stage {
   position: relative !important;
   width: 100% !important;
   height: 100% !important;
@@ -14976,15 +15061,81 @@ body {
 }
 
 .trip-map-rail .amap-real-map,
-.trip-map-rail .custom-map-canvas,
-.free2-map-rail .amap-real-map,
-.free2-map-rail .custom-map-canvas {
+.trip-map-rail .custom-map-canvas {
   width: 100% !important;
   height: 100% !important;
   min-height: 100% !important;
   border-radius: 0 !important;
 }
 
+/* Right-side rail marker parity: purple numbered pins + D labels, scaled for narrow side maps. */
+.free2-map-rail .trip-map-marker,
+.doc-map-rail .trip-map-marker,
+.trip-map-rail .trip-map-marker {
+  width: 42px !important;
+  height: 42px !important;
+  filter: drop-shadow(0 5px 10px rgba(82, 37, 171, 0.24));
+}
+
+.free2-map-rail .trip-map-marker__dot,
+.doc-map-rail .trip-map-marker__dot,
+.trip-map-rail .trip-map-marker__dot {
+  border: 3px solid rgba(255, 255, 255, 0.98) !important;
+  color: #fff !important;
+  background: #a855f7 !important;
+  box-shadow:
+    0 0 0 1px rgba(168, 85, 247, 0.2),
+    0 8px 14px rgba(82, 37, 171, 0.2) !important;
+  font-size: 1.05rem !important;
+  font-weight: 950 !important;
+}
+
+.free2-map-rail .trip-map-marker__day,
+.doc-map-rail .trip-map-marker__day,
+.trip-map-rail .trip-map-marker__day {
+  left: 28px !important;
+  top: -5px !important;
+  z-index: 3;
+  border: 2px solid rgba(255, 255, 255, 0.98) !important;
+  padding: 3px 7px !important;
+  color: #fff !important;
+  background: #a855f7 !important;
+  box-shadow: 0 5px 10px rgba(82, 37, 171, 0.2) !important;
+  font-size: 0.66rem !important;
+  font-weight: 950 !important;
+}
+
+.free2-map-rail .trip-map-marker__day--compact,
+.doc-map-rail .trip-map-marker__day--compact,
+.trip-map-rail .trip-map-marker__day--compact {
+  left: 28px !important;
+  top: -5px !important;
+  padding: 3px 7px !important;
+  font-size: 0.66rem !important;
+}
+
+.free2-map-rail .trip-map-marker__name,
+.doc-map-rail .trip-map-marker__name,
+.trip-map-rail .trip-map-marker__name {
+  display: none !important;
+}
+
+/* Default right-rail maps should show only the map, no planner pills/status/detail overlays.
+   This includes Free / Calendar / Document / Ultimate, but leaves the pending/canvas map preview untouched. */
+.free2-map-rail .map-planner-controls,
+.free2-map-rail .custom-map-legend,
+.free2-map-rail .amap-real-state,
+.free2-map-rail .amap-real-attribution,
+.free2-map-rail .map-poi-sheet,
+.free2-map-rail .amap-mcp-attribution,
+.free2-map-rail .amap-mcp-state,
+.doc-map-rail .map-planner-controls,
+.doc-map-rail .custom-map-legend,
+.doc-map-rail .amap-real-state,
+.doc-map-rail .amap-real-attribution,
+.doc-map-rail .map-poi-sheet,
+.doc-map-rail .amap-mcp-attribution,
+.doc-map-rail .amap-mcp-state,
 .trip-map-rail .map-planner-controls,
 .trip-map-rail .custom-map-legend,
 .trip-map-rail .amap-real-state,
@@ -14998,6 +15149,27 @@ body {
   display: none !important;
 }
 
+.free2-map-rail .amap-logo,
+.free2-map-rail .amap-copyright,
+.free2-map-rail .amap-scalecontrol,
+.free2-map-rail .amap-toolbar,
+.free2-map-rail .amap-controlbar,
+.free2-map-rail .amap-zoomcontrol,
+.doc-map-rail .amap-logo,
+.doc-map-rail .amap-copyright,
+.doc-map-rail .amap-scalecontrol,
+.doc-map-rail .amap-toolbar,
+.doc-map-rail .amap-controlbar,
+.doc-map-rail .amap-zoomcontrol,
+.trip-map-rail .amap-logo,
+.trip-map-rail .amap-copyright,
+.trip-map-rail .amap-scalecontrol,
+.trip-map-rail .amap-toolbar,
+.trip-map-rail .amap-controlbar,
+.trip-map-rail .amap-zoomcontrol {
+  display: none !important;
+}
+
 .ultimate-view--map-expanded .ultimate-rail.trip-map-rail,
 .calendar-shell--map-expanded .calendar-map-rail.trip-map-rail,
 .calendar-view--map-expanded .calendar-map-rail.trip-map-rail {
@@ -15005,4 +15177,403 @@ body {
   inset: auto !important;
   z-index: auto !important;
   box-shadow: none !important;
+}
+
+/* Document view parity with Free View: chat + document + right map rail */
+.doc-shell {
+  height: calc(100vh - 84px);
+  min-height: 720px;
+  overflow: hidden;
+  border: 1px solid rgba(54, 72, 55, 0.14);
+  border-radius: 16px;
+  background: #f8fafc;
+}
+
+.doc-shell__workspace {
+  position: relative;
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr) 320px;
+  height: 100%;
+  min-height: 0;
+}
+
+.doc-shell .chat-pane {
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-right: 1px solid rgba(54, 72, 55, 0.14);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.doc-shell__main {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.doc-shell .document-view.doc-canvas-view {
+  height: 100%;
+  overflow: auto;
+}
+
+.doc-shell .doc-canvas-desk {
+  min-height: 100%;
+}
+
+.doc-map-rail {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  border-left: 1px solid rgba(54, 72, 55, 0.14) !important;
+  background: #e9f1f7;
+}
+
+.doc-map-rail__inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+}
+
+.doc-map-rail .map-stage {
+  height: 100%;
+  min-height: 100%;
+  border-radius: 0;
+}
+
+.doc-map-rail .amap-real-map,
+.doc-map-rail .custom-map-canvas {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  border-radius: 0 !important;
+}
+
+.doc-map-rail .map-planner-controls,
+.doc-map-rail .custom-map-legend,
+.doc-map-rail .amap-real-state,
+.doc-map-rail .amap-real-attribution,
+.doc-map-rail .map-poi-sheet,
+.doc-map-rail .amap-mcp-attribution,
+.doc-map-rail .amap-mcp-state {
+  display: none !important;
+}
+
+.doc-booking-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 32;
+  width: min(390px, calc(100% - 320px));
+  border-left: 1px solid rgba(54, 72, 55, 0.16);
+  background: rgba(255, 254, 250, 0.98);
+  box-shadow: -18px 0 44px rgba(31, 58, 47, 0.16);
+}
+
+@media (max-width: 1180px) {
+  .doc-shell__workspace {
+    grid-template-columns: minmax(280px, 320px) minmax(0, 1fr) 280px;
+  }
+}
+
+@media (max-width: 900px) {
+  .doc-shell {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .doc-shell__workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .doc-shell .chat-pane {
+    display: none;
+  }
+
+  .doc-map-rail {
+    min-height: 320px;
+    border-left: 0 !important;
+    border-top: 1px solid rgba(54, 72, 55, 0.14) !important;
+  }
+}
+
+/* Readable Markdown-style formatting inside assistant chat bubbles */
+.chat-message--assistant {
+  max-width: 94%;
+}
+
+.chat-md-flow {
+  display: grid;
+  gap: 10px;
+}
+
+.chat-md-flow > p {
+  margin: 0;
+  color: inherit;
+  font-size: 0.92rem;
+  line-height: 1.72;
+}
+
+.chat-md-flow strong {
+  color: #17231c;
+  font-weight: 850;
+}
+
+.chat-md-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 2px;
+  color: #17231c;
+  font-size: 0.9rem;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+
+.chat-md-heading::before {
+  width: 4px;
+  height: 16px;
+  border-radius: 999px;
+  background: #98a56f;
+  content: "";
+}
+
+.chat-md-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-md-list li {
+  position: relative;
+  padding: 9px 10px 9px 28px;
+  border: 1px solid rgba(54, 72, 55, 0.09);
+  border-radius: 12px;
+  color: #344239;
+  background: rgba(242, 245, 239, 0.72);
+  font-size: 0.88rem;
+  line-height: 1.58;
+}
+
+.chat-md-list li::before {
+  position: absolute;
+  top: 14px;
+  left: 12px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #d0aa4c;
+  content: "";
+}
+
+.chat-day-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(54, 72, 55, 0.12);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 96% 0, rgba(228, 196, 109, 0.24), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(248, 246, 237, 0.9));
+  box-shadow: 0 8px 20px rgba(30, 55, 42, 0.06);
+}
+
+.chat-day-card__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.chat-day-card__head span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 42px;
+  height: 30px;
+  border-radius: 999px;
+  color: #fffdf7;
+  background: #526a46;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.chat-day-card__head p {
+  margin: 0;
+  color: #27352c;
+  font-size: 0.9rem;
+  line-height: 1.62;
+}
+
+.chat-day-card__meta {
+  display: grid;
+  gap: 8px;
+}
+
+.chat-day-card__meta div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 253, 248, 0.82);
+}
+
+.chat-day-card__meta strong {
+  color: #7b6a28;
+  font-size: 0.78rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.chat-day-card__meta em {
+  color: #344239;
+  font-size: 0.86rem;
+  font-style: normal;
+  line-height: 1.52;
+}
+
+.chat-message--user .chat-md-flow,
+.chat-message--user .chat-day-card,
+.chat-message--user .chat-md-list {
+  color: inherit;
+}
+
+/* Hard isolation for Free View right map rail.
+   The Free canvas contains wide/drag-style cards and images; keep them clipped to
+   the middle column so they can never cover the right map rail. */
+.free2-shell {
+  isolation: isolate !important;
+}
+
+.free2-shell .free2-shell__workspace {
+  position: relative !important;
+  display: grid !important;
+  grid-template-columns: 320px minmax(0, 1fr) 320px !important;
+  grid-template-areas: "chat main map" !important;
+  overflow: hidden !important;
+}
+
+.free2-shell .chat-pane {
+  grid-area: chat !important;
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+.free2-shell__main {
+  grid-area: main !important;
+  position: relative !important;
+  z-index: 1 !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  contain: layout paint !important;
+  clip-path: inset(0) !important;
+}
+
+.free2-shell .free-canvas-view {
+  position: relative !important;
+  z-index: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  height: 100% !important;
+  overflow: auto !important;
+  contain: layout paint !important;
+}
+
+.free2-shell .free-canvas-board,
+.free2-shell .free-recommendation-dock,
+.free2-shell .free-recommendation-main,
+.free2-shell .free-rec-track {
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+.free2-shell .free-activity-card,
+.free2-shell .free-rec-card,
+.free2-shell .free-activity-card__image,
+.free2-shell .free-rec-card__image,
+.free2-shell img {
+  max-width: 100% !important;
+}
+
+.free2-map-rail {
+  grid-area: map !important;
+  position: relative !important;
+  z-index: 20 !important;
+  width: 320px !important;
+  min-width: 320px !important;
+  max-width: 320px !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  contain: layout paint !important;
+  background: #e9f1f7 !important;
+}
+
+.free2-map-rail__inner,
+.free2-map-rail .map-stage,
+.free2-map-rail .amap-real-map,
+.free2-map-rail .custom-map-canvas {
+  position: relative !important;
+  z-index: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+  border-radius: 0 !important;
+}
+
+.map-focus-badge {
+  position: absolute;
+  left: 16px;
+  top: 72px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 32px);
+  border: 1px solid rgba(7, 87, 255, 0.14);
+  border-radius: 999px;
+  padding: 8px 12px;
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 14px 34px rgba(9, 42, 92, 0.14);
+  font-size: 0.78rem;
+  font-weight: 900;
+  backdrop-filter: blur(14px);
+  pointer-events: none;
+}
+
+.map-focus-badge span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: 0 0 0 5px rgba(7, 87, 255, 0.12);
+}
+
+.ultimate-rail__map .map-focus-badge,
+.trip-map-rail .map-focus-badge {
+  top: 64px;
+}
+
+.ultimate-itinerary-card[data-action="focus-map-poi"] {
+  cursor: pointer;
+}
+
+.ultimate-itinerary-card[data-action="focus-map-poi"]:hover {
+  border-color: rgba(7, 87, 255, 0.18);
+  box-shadow: 0 18px 44px rgba(7, 87, 255, 0.12);
+}
+
+.trip-map-marker.is-active {
+  z-index: 999 !important;
 }

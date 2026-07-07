@@ -580,7 +580,8 @@ const state = {
     flights: {},
     hotels: {},
     tickets: {},
-    trains: {}
+    trains: {},
+    restaurants: {}
   },
   hotelSearches: {},
   bookingSearches: {},
@@ -597,7 +598,9 @@ const state = {
     hasManualDaySelection: false,
     isEditing: false,
     activePoiId: null,
-    draggingPoiId: null
+    draggingPoiId: null,
+    focusContext: { type: "overview", day: "ALL", category: "all", poiId: null, source: "auto" },
+    userMapInteractionUntil: 0
   },
   canvasPlanner: {
     draggingItem: null,
@@ -638,6 +641,10 @@ const state = {
     canvas: 1,
     ultimate: 1
   },
+  workspaceZoomFeedback: {
+    view: null,
+    visible: false
+  },
   tripGuide: null,
   route: [],
   notes: [],
@@ -667,12 +674,16 @@ let amapMapInstance = null;
 let amapInitToken = 0;
 let amapLastViewState = null;
 let amapLastRouteSignature = "";
+let amapProgrammaticFitUntil = 0;
+let ultimateMapScrollObserver = null;
+let ultimateMapScrollSyncEnabled = false;
 let inspirationMapInstance = null;
 let inspirationMapMarkersByPickId = new Map();
 let inspirationMapPickSignature = "";
 let inspirationCardObserver = null;
 let amapRoutesFetchPromise = null;
 let requestHomeRender = null;
+let workspaceZoomFeedbackTimer = null;
 const travelImagePendingKeys = new Set();
 const travelImageLoadCache = new Map();
 
@@ -702,10 +713,19 @@ function apiUrl(path) {
 
 export function renderHomeScreen(root) {
   const render = (options = {}) => {
+    const isPlanningLoadingView = state.isChatLoading && !state.route.length && !isInspirationTrip();
+    if (isPlanningLoadingView) state.selection = null;
+    const shouldPreserveMapRail = options.preserveMapRail === true && state.view === "ultimate";
+    const preservedMapContainerId = shouldPreserveMapRail ? getActiveAmapContainerId() : "";
+    const preservedMapContainer = preservedMapContainerId ? root.querySelector(`#${preservedMapContainerId}`) : null;
+    const preservedMapRail = preservedMapContainer?.closest(".trip-map-rail") || null;
+    if (preservedMapRail) preservedMapRail.remove();
     const viewPanelScrollTop = root.querySelector(".view-panel")?.scrollTop || 0;
     const viewPanelScrollLeft = root.querySelector(".view-panel")?.scrollLeft || 0;
+    const ultimateCanvasScrollTop = root.querySelector(".ultimate-canvas__inner")?.scrollTop || 0;
+    const ultimateCanvasScrollLeft = root.querySelector(".ultimate-canvas__inner")?.scrollLeft || 0;
     const isHomeLanding = !hasEnteredTripWorkspace() && !isInspirationTrip();
-    const shouldShowPlanningLoading = state.isChatLoading && !state.route.length && !isInspirationTrip();
+    const shouldShowPlanningLoading = isPlanningLoadingView;
     root.innerHTML = `
       <section class="app-shell ${isHomeLanding ? "app-shell--landing" : ""}">
         ${renderTopbar()}
@@ -726,6 +746,8 @@ export function renderHomeScreen(root) {
             ? renderCalendarWorkspaceView()
           : state.view === "free2"
             ? renderFreeCanvasWorkspaceView()
+          : state.view === "doc"
+            ? renderDocumentWorkspaceView()
           : `
             <div class="workspace ${state.workspaceEntering ? "workspace--entering" : ""} ${state.activeBooking ? "workspace--booking-open" : ""}">
               ${renderChatPanel()}
@@ -743,13 +765,38 @@ export function renderHomeScreen(root) {
         ${renderFreePoiModal()}
         ${renderFreePoiDetail()}
         ${renderFreeInspirationDetail()}
-        ${renderSelectionToolbar()}
+        ${shouldShowPlanningLoading ? "" : renderSelectionToolbar()}
       </section>
     `;
+    if (preservedMapRail && preservedMapContainerId) {
+      const nextMapContainer = root.querySelector(`#${preservedMapContainerId}`);
+      const nextMapRail = nextMapContainer?.closest(".trip-map-rail");
+      if (nextMapRail) {
+        nextMapRail.replaceWith(preservedMapRail);
+        queueMicrotask(() => amapMapInstance?.resize?.());
+      }
+    }
     const viewPanel = root.querySelector(".view-panel");
     if (viewPanel) {
       viewPanel.scrollTop = viewPanelScrollTop;
       viewPanel.scrollLeft = viewPanelScrollLeft;
+    }
+    const ultimateCanvas = root.querySelector(".ultimate-canvas__inner");
+    if (ultimateCanvas) {
+      ultimateCanvas.scrollTop = ultimateCanvasScrollTop;
+      ultimateCanvas.scrollLeft = ultimateCanvasScrollLeft;
+      if (options.anchorUltimateDayId) {
+        queueMicrotask(() => {
+          const nextUltimateCanvas = root.querySelector(".ultimate-canvas__inner");
+          const anchorCard = [...root.querySelectorAll(".ultimate-canvas .ult-day-card")]
+            .find((card) => card.dataset.day === options.anchorUltimateDayId);
+          if (!nextUltimateCanvas || !anchorCard) return;
+          const canvasRect = nextUltimateCanvas.getBoundingClientRect();
+          const cardRect = anchorCard.getBoundingClientRect();
+          const topOffset = cardRect.top - canvasRect.top + nextUltimateCanvas.scrollTop;
+          nextUltimateCanvas.scrollTo({ top: Math.max(0, topOffset - 18), behavior: "auto" });
+        });
+      }
     }
     if (state.selection?.text) {
       queueMicrotask(() => root.querySelector(".selection-comment-input")?.focus({ preventScroll: true }));
@@ -764,13 +811,36 @@ export function renderHomeScreen(root) {
         input?.select?.();
       });
     }
-    scheduleAmapMapRefresh(options);
+    if (preservedMapRail) {
+      queueMicrotask(() => {
+        const containerId = getActiveAmapContainerId();
+        const stage = containerId ? root.querySelector(`#${containerId}`)?.closest(".map-stage") : null;
+        const dayFilter = getMapDayFilterForContainer(containerId);
+        const activePoi = getMapPoiById(state.mapPlanner.activePoiId);
+        if (stage) {
+          const container = stage.querySelector(`#${containerId}`);
+          if (container) container.dataset.mapDayFilter = String(dayFilter);
+          stage.querySelector(".map-poi-sheet")?.remove();
+          if (activePoi) stage.insertAdjacentHTML("beforeend", renderMapPoiDetailCard(activePoi));
+          updateMapFocusBadge();
+        }
+        if (amapMapInstance && window.AMap) {
+          amapMapInstance.resize?.();
+          renderAmapOverlays(window.AMap, amapMapInstance, { preserveView: false, containerId, dayFilter });
+        } else {
+          amapMapInstance?.resize?.();
+        }
+      });
+    } else {
+      scheduleAmapMapRefresh(options);
+    }
     scheduleInspirationMapRefresh();
     if (isInspirationTrip()) {
       syncInspirationPicks();
     }
     hydrateTravelImages(root);
     setupInspirationCardScrollSync(root);
+    setupUltimateMapScrollSync(root);
   };
   requestHomeRender = render;
 
@@ -784,7 +854,7 @@ export function renderHomeScreen(root) {
       state.view = target.dataset.view === "map" ? "canvas" : target.dataset.view;
       state.activeCanvasDay = null;
       render();
-      if (["doc", "canvas", "free2", "ultimate"].includes(state.view)) prefetchTripMapAssets(render);
+      if (["doc", "canvas", "free2", "calendar", "ultimate"].includes(state.view)) prefetchTripMapAssets(render);
       return;
     }
 
@@ -794,6 +864,7 @@ export function renderHomeScreen(root) {
       if (tab === "all") {
         state.ultimateActiveDay = null;
         state.ultimateExpandedDays = new Set();
+        setMapFocusContext({ type: "overview", day: "ALL", category: "all", poiId: null, source: "ultimate" }, { force: true });
       } else {
         const dayNum = parseInt(tab.replace("day", ""));
         const days = getPlanDays();
@@ -801,6 +872,7 @@ export function renderHomeScreen(root) {
         if (selectedDay) {
           state.ultimateActiveDay = selectedDay.id;
           state.ultimateExpandedDays.add(selectedDay.id);
+          setMapFocusContext({ type: "day", day: selectedDay.day, dayId: selectedDay.id, source: "ultimate" }, { force: true });
         }
       }
       render();
@@ -833,8 +905,9 @@ export function renderHomeScreen(root) {
       const selectedDay = days.find((d) => d.id === dayId);
       if (selectedDay) {
         state.ultimateTab = "day" + selectedDay.day;
+        setMapFocusContext({ type: "day", day: selectedDay.day, dayId: selectedDay.id, source: "ultimate" }, { force: true });
       }
-      render();
+      render({ anchorUltimateDayId: dayId, preserveMapRail: true });
       return;
     }
 
@@ -846,8 +919,13 @@ export function renderHomeScreen(root) {
         const nextExpandedDay = days.find((day) => state.ultimateExpandedDays.has(day.id));
         state.ultimateActiveDay = nextExpandedDay?.id || null;
         state.ultimateTab = nextExpandedDay ? "day" + nextExpandedDay.day : "all";
+        if (nextExpandedDay) {
+          setMapFocusContext({ type: "day", day: nextExpandedDay.day, dayId: nextExpandedDay.id, source: "ultimate" }, { force: true });
+        } else {
+          setMapFocusContext({ type: "overview", day: "ALL", category: "all", poiId: null, source: "ultimate" }, { force: true });
+        }
       }
-      render();
+      render({ anchorUltimateDayId: dayId, preserveMapRail: true });
       return;
     }
 
@@ -991,7 +1069,12 @@ export function renderHomeScreen(root) {
     }
 
     if (action === "set-map-day") {
-      updateMapDayFilter(normalizeMapPlannerDay(target.dataset.day));
+      const dayFilter = normalizeMapPlannerDay(target.dataset.day);
+      setMapFocusContext(dayFilter === "ALL"
+        ? { type: "overview", day: "ALL", category: "all", poiId: null, source: "manual" }
+        : { type: "day", day: dayFilter, source: "manual" },
+        { force: true });
+      updateMapDayFilter(dayFilter);
       return;
     }
 
@@ -1006,12 +1089,22 @@ export function renderHomeScreen(root) {
     }
 
     if (action === "select-map-poi") {
+      setMapFocusContext({ type: "poi", poiId: target.dataset.poi || null, source: "map" }, { force: true });
       updateMapPoiSelection(target.dataset.poi || null);
       render();
       return;
     }
 
+    if (action === "focus-map-poi") {
+      const poiId = target.dataset.poi || null;
+      setMapFocusContext({ type: "poi", poiId, source: "canvas" }, { force: true });
+      updateMapPoiSelection(poiId);
+      render({ preserveMapRail: state.view === "ultimate" });
+      return;
+    }
+
     if (action === "close-map-poi") {
+      setMapFocusContext({ type: "overview", day: "ALL", category: "all", poiId: null, source: "manual" }, { force: true });
       updateMapPoiSelection(null);
       render();
       return;
@@ -1024,8 +1117,12 @@ export function renderHomeScreen(root) {
     }
 
     if (action === "toggle-guide-block") {
-      toggleSetValue(state.canvasGuide.collapsed, target.dataset.block);
-      render();
+      const block = target.dataset.block;
+      toggleSetValue(state.canvasGuide.collapsed, block);
+      if (!state.canvasGuide.collapsed.has(block)) {
+        setMapFocusContext({ type: "category", category: getGuideBlockMapCategory(block), label: target.dataset.mapLabel || "", source: "guide" }, { force: true });
+      }
+      render({ preserveMapRail: state.view === "ultimate" });
       return;
     }
 
@@ -1551,22 +1648,36 @@ export function renderHomeScreen(root) {
     if (freeActivityDrop && freeActivitySource) {
       event.preventDefault();
       state.canvasPlanner.draggingFreeActivity = null;
+      const targetDayId = freeActivityDrop.dataset.day;
       if (moveFreeActivity(
         freeActivitySource.dayId,
         Number(freeActivitySource.index),
-        freeActivityDrop.dataset.day,
+        targetDayId,
         Number(freeActivityDrop.dataset.index)
-      )) render();
+      )) {
+        if (state.view === "ultimate") render({ anchorUltimateDayId: targetDayId, preserveMapRail: true, preserveMapView: true });
+        else render();
+      }
       return;
     }
 
     const canvasDrop = event.target.closest("[data-canvas-drop-day]");
     if (canvasDrop) {
       event.preventDefault();
+      const targetDayId = canvasDrop.dataset.canvasDropDay;
+      if (freeActivitySource) {
+        state.canvasPlanner.draggingFreeActivity = null;
+        if (moveFreeActivity(freeActivitySource.dayId, Number(freeActivitySource.index), targetDayId)) {
+          if (state.view === "ultimate") render({ anchorUltimateDayId: targetDayId, preserveMapRail: true, preserveMapView: true });
+          else render();
+        }
+        return;
+      }
       const raw = event.dataTransfer.getData("application/x-canvas-activity");
       const source = parseJsonOrNull(raw) || state.canvasPlanner.draggingItem;
-      if (source && moveCanvasActivity(source.dayId, Number(source.index), canvasDrop.dataset.canvasDropDay)) {
-        render();
+      if (source && moveCanvasActivity(source.dayId, Number(source.index), targetDayId)) {
+        if (state.view === "ultimate") render({ anchorUltimateDayId: targetDayId, preserveMapRail: true, preserveMapView: true });
+        else render();
       }
       return;
     }
@@ -1576,11 +1687,15 @@ export function renderHomeScreen(root) {
       event.preventDefault();
       if (freeActivitySource) {
         state.canvasPlanner.draggingFreeActivity = null;
+        const targetDayId = freeDrop.dataset.freeDropDay;
         if (moveFreeActivity(
           freeActivitySource.dayId,
           Number(freeActivitySource.index),
-          freeDrop.dataset.freeDropDay
-        )) render();
+          targetDayId
+        )) {
+          if (state.view === "ultimate") render({ anchorUltimateDayId: targetDayId, preserveMapRail: true, preserveMapView: true });
+          else render();
+        }
         return;
       }
       const source = parseJsonOrNull(event.dataTransfer.getData("application/x-free-recommendation"));
@@ -2107,7 +2222,7 @@ function renderEditorHeader() {
 
 function renderViewTabs() {
   const views = [
-    ["canvas", "画布视图"],
+    ["canvas", "待定视图"],
     ["doc", "文档视图"],
     ["calendar", "日历视图"],
     ["free2", "自由视图"],
@@ -2158,7 +2273,7 @@ function renderBookingEmptyState() {
   return `
     <div class="booking-empty">
       <strong>从时间轴开始</strong>
-      <p>点击航班、酒店或门票入口，左侧会展开对应方案。已预订项目会显示订单详情。</p>
+      <p>点击航班、酒店、餐厅或门票入口，左侧会展开对应方案。已选项目会显示订单详情。</p>
     </div>
   `;
 }
@@ -2192,8 +2307,13 @@ function renderFlyAiBookingOptions(active, city) {
     : [];
   const usingFallback = active.kind === "hotels" && !liveOptions.length && fallbackOptions.length > 0;
   const options = liveOptions.length ? liveOptions : fallbackOptions;
+  const day = getPlanDays().find((item) => item.id === active.dayId)
+    || getPlanDays().find((item) => item.cityId === active.cityId);
+  const enrichedOptions = active.kind === "hotels"
+    ? options.map((option) => enrichHotelBookingOption(option, active, city, day))
+    : options;
   const hasFinishedEmptySearch = search && !search.loading && !search.error && liveOptions.length === 0 && !fallbackOptions.length;
-  const sourceLabel = usingFallback ? "本地建议" : "实时查询";
+  const sourceLabel = usingFallback ? "本地建议" : active.kind === "hotels" ? "线路推荐" : "实时查询";
   const sourceBadge = usingFallback ? "离线兜底" : "预订助手";
   return `
     <div class="booking-group booking-group--flyai">
@@ -2204,8 +2324,8 @@ function renderFlyAiBookingOptions(active, city) {
         </div>
         <strong>${sourceBadge}</strong>
       </div>
-      ${active.query ? `<p class="booking-group__hint">正在匹配“${escapeHtml(active.query)}”相关的可订方案。</p>` : ""}
-      ${search?.loading ? renderHotelSearchState("正在查询实时库存与价格...") : ""}
+      ${renderBookingContextHint(active, city, day)}
+      ${search?.loading ? renderHotelSearchState(active.kind === "hotels" ? "正在结合当天线路与酒店偏好查询..." : "正在查询实时库存与价格...") : ""}
       ${search?.error
         ? renderHotelSearchState(
             usingFallback ? "实时查询暂时不可用，先展示行程内建议酒店。" : search.error,
@@ -2213,7 +2333,7 @@ function renderFlyAiBookingOptions(active, city) {
           )
         : ""}
       ${hasFinishedEmptySearch ? renderHotelSearchState("暂未返回可展示方案，请稍后重试或补充更明确的信息。", true) : ""}
-      ${options.map((option, index) => renderFlyAiBookingCard(active, city, option, index)).join("")}
+      ${enrichedOptions.map((option, index) => renderFlyAiBookingCard(active, city, option, index)).join("")}
       ${search?.systemMessage ? `<p class="flyai-platform-hint">${escapeHtml(sanitizeBookingDisplayText(stripMarkdownLinks(search.systemMessage)))}</p>` : ""}
     </div>
   `;
@@ -2221,22 +2341,119 @@ function renderFlyAiBookingOptions(active, city) {
 
 function renderFlyAiBookingCard(active, city, option, index) {
   const imageUrl = getTravelImageProxyUrl(option.imageUrl);
+  const recommendation = active.kind === "hotels" ? option.recommendationReason : "";
+  const matchTags = active.kind === "hotels" ? option.matchTags : option.tags;
   return `
-    <article class="flyai-booking-card">
+    <article class="flyai-booking-card ${active.kind === "hotels" ? "flyai-booking-card--hotel" : ""}">
       ${imageUrl ? `<img class="flyai-booking-card__image" src="${escapeAttr(imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : ""}
       <div class="flyai-booking-card__head">
         <span>${escapeHtml(option.meta || "实时可订")}</span>
         ${option.price ? `<strong>${escapeHtml(option.price)}</strong>` : ""}
       </div>
       <h3>${escapeHtml(option.name)}</h3>
-      ${option.detail ? `<p>${escapeHtml(option.detail)}</p>` : ""}
-      ${option.tags?.length ? `<div class="flyai-booking-card__tags">${option.tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>` : ""}
+      ${active.kind === "hotels" && recommendation ? `
+        <div class="flyai-booking-card__reason">
+          <strong>推荐理由</strong>
+          <p>${escapeHtml(recommendation)}</p>
+        </div>
+      ` : option.detail ? `<p>${escapeHtml(option.detail)}</p>` : ""}
+      ${matchTags?.length ? `<div class="flyai-booking-card__tags">${matchTags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>` : ""}
       <div class="flyai-booking-card__actions">
-        <button class="is-secondary" type="button" data-action="apply-booking-option" data-option="${index}">选用此方案</button>
+        <button class="is-secondary" type="button" data-action="apply-booking-option" data-option="${index}">${active.kind === "hotels" ? "选用此酒店" : "选用此方案"}</button>
         ${option.bookingUrl ? `<button type="button" data-action="open-flyai-booking" data-option="${index}">去查看</button>` : `<span>暂未提供预订链接</span>`}
       </div>
     </article>
   `;
+}
+
+function renderBookingContextHint(active, city, day) {
+  if (active.kind !== "hotels") {
+    return active.query ? `<p class="booking-group__hint">正在匹配“${escapeHtml(active.query)}”相关的可订方案。</p>` : "";
+  }
+  const preferences = getHotelPreferenceTags(active, day, city).slice(0, 4);
+  const routeText = getHotelRouteContextText(day, city);
+  return `
+    <div class="booking-context-card">
+      <p>${escapeHtml(routeText)}</p>
+      ${preferences.length ? `<div>${preferences.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>` : ""}
+    </div>
+  `;
+}
+
+function enrichHotelBookingOption(option, active, city, day) {
+  const matchTags = getHotelMatchTags(option, active, city, day);
+  return {
+    ...option,
+    matchTags,
+    recommendationReason: buildHotelRecommendationReason(option, active, city, day, matchTags)
+  };
+}
+
+function getHotelRouteContextText(day, city) {
+  const highlights = getDayHotelContextHighlights(day);
+  const stay = sanitizeBookingDisplayText(day?.stay);
+  const areaText = stay && !/(待定|交通便利区域|市区酒店)/.test(stay) ? `，优先看「${stay}」附近` : "";
+  if (highlights.length) {
+    return `根据 D${day?.day || ""} 的${highlights.join("、")}安排${areaText}，推荐更顺路、少折返的住宿。`;
+  }
+  return `根据 ${city.city} 当前线路${areaText}，推荐通勤更省心的住宿。`;
+}
+
+function getDayHotelContextHighlights(day) {
+  const schedule = Array.isArray(day?.schedule) ? day.schedule : [];
+  return schedule
+    .map((activity) => cleanCanvasItemTitle(activity?.title))
+    .filter((title) => title && !/(入住|住宿|酒店|返程|返回|早餐|午餐|晚餐|用餐|休息|自由活动)/.test(title))
+    .slice(0, 3);
+}
+
+function getHotelPreferenceTags(active, day, city) {
+  const text = [active?.query, day?.stay, day?.summary, ...(Array.isArray(day?.schedule) ? day.schedule.flatMap((item) => [item.title, item.detail]) : [])]
+    .filter(Boolean)
+    .join(" ");
+  const tags = [];
+  const add = (tag) => { if (tag && !tags.includes(tag)) tags.push(tag); };
+  if (/(湖景|观湖|看湖|临湖)/.test(text)) add("湖景优先");
+  if (/(码头|游船|中心湖区|东南湖区)/.test(text)) add("靠近游船动线");
+  if (/(亲子|孩子|儿童|乐园|家庭)/.test(text)) add("亲子友好");
+  if (/(父母|老人|长辈|少走路|不折腾|轻松)/.test(text)) add("少折腾");
+  if (/(预算|经济|性价比|便宜)/.test(text)) add("性价比");
+  if (/(高端|舒适|度假|泳池|温泉)/.test(text)) add("舒适度假");
+  if (/(晚餐|餐厅|鱼头|美食|吃饭)/.test(text)) add("吃饭方便");
+  if (!tags.length) add(`${city.city}线路匹配`);
+  return tags;
+}
+
+function getHotelMatchTags(option, active, city, day) {
+  const text = [option?.name, option?.meta, option?.detail, ...(Array.isArray(option?.tags) ? option.tags : [])]
+    .map(sanitizeBookingDisplayText)
+    .filter(Boolean)
+    .join(" ");
+  const tags = [];
+  const add = (tag) => { if (tag && !tags.includes(tag)) tags.push(tag); };
+  getHotelPreferenceTags(active, day, city).forEach(add);
+  if (/(湖景|观湖|临湖|湖畔|湖边)/.test(text)) add("湖景");
+  if (/(码头|中心湖区|东南湖区|千岛湖)/.test(text)) add("动线方便");
+  if (/(市区|中心|广场|餐厅|美食|商圈)/.test(text)) add("吃饭方便");
+  if (/(经济|性价比|舒适|高评分|评分|精选)/.test(text)) add(/经济|性价比/.test(text) ? "性价比" : "高评分");
+  return tags.slice(0, 5);
+}
+
+function buildHotelRecommendationReason(option, active, city, day, matchTags = []) {
+  const highlights = getDayHotelContextHighlights(day);
+  const detail = sanitizeBookingDisplayText(option?.detail);
+  const meta = sanitizeBookingDisplayText(option?.meta);
+  const routePart = highlights.length
+    ? `贴合当天${highlights.slice(0, 2).join("、")}的行程，减少来回折返`
+    : `贴合${city.city}当前线路，适合作为当天住宿落点`;
+  const preferencePart = matchTags.length ? `；匹配${matchTags.slice(0, 3).join("、")}偏好` : "";
+  const locationPart = detail || meta ? `。${detail || meta}` : "。";
+  return shortenHotelRecommendation(`${routePart}${preferencePart}${locationPart}`);
+}
+
+function shortenHotelRecommendation(value, maxLength = 76) {
+  const text = sanitizeBookingDisplayText(value).replace(/；。/g, "。").replace(/。。+/g, "。");
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
 }
 
 function stripMarkdownLinks(value) {
@@ -2255,6 +2472,7 @@ function getBookingLabel(kind) {
   if (kind === "flights") return "机票";
   if (kind === "hotels") return "酒店";
   if (kind === "trains") return "火车票";
+  if (kind === "restaurants") return "餐厅";
   return "门票与体验";
 }
 
@@ -3510,6 +3728,61 @@ function setupInspirationCardScrollSync(root) {
   cards.forEach((card) => inspirationCardObserver.observe(card));
 }
 
+
+function setupUltimateMapScrollSync(root) {
+  ultimateMapScrollObserver?.disconnect();
+  ultimateMapScrollObserver = null;
+  ultimateMapScrollSyncEnabled = false;
+
+  if (state.view !== "ultimate") return;
+  const container = root.querySelector(".ultimate-canvas__inner");
+  if (!container) return;
+  const cards = [...container.querySelectorAll(".ult-day-card[data-day]")];
+  if (!cards.length) return;
+
+  container.addEventListener("scroll", () => {
+    ultimateMapScrollSyncEnabled = true;
+  }, { passive: true, once: true });
+
+  ultimateMapScrollObserver = new IntersectionObserver(
+    (entries) => {
+      if (!ultimateMapScrollSyncEnabled) return;
+      if (Date.now() < Number(state.mapPlanner.userMapInteractionUntil || 0)) return;
+      const visible = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+      const topEntry = visible[0];
+      if (!topEntry) return;
+      const dayId = topEntry.target.dataset.day;
+      const day = getPlanDays().find((item) => item.id === dayId);
+      if (!day) return;
+      const focus = getMapFocusContext();
+      if (focus.type === "day" && Number(focus.day) === Number(day.day)) return;
+      if (!setMapFocusContext({ type: "day", day: day.day, dayId: day.id, source: "scroll" })) return;
+      updateMapFocusBadge();
+      if (amapMapInstance && window.AMap) {
+        renderAmapOverlays(window.AMap, amapMapInstance, {
+          preserveView: false,
+          containerId: getActiveAmapContainerId(),
+          dayFilter: day.day
+        });
+      }
+    },
+    {
+      root: container,
+      threshold: [0.28, 0.45, 0.62]
+    }
+  );
+
+  cards.forEach((card) => ultimateMapScrollObserver.observe(card));
+}
+
+function updateMapFocusBadge() {
+  document.querySelectorAll(".map-focus-badge").forEach((badge) => {
+    badge.innerHTML = `<span></span>${escapeHtml(getMapFocusContextLabel())}`;
+  });
+}
+
 function renderInspirationMapFallback(picks) {
   const activePick = picks.find((pick) => pick.id === state.inspiration.activePickId) || picks[0];
   const markers = picks.map((pick) => {
@@ -3937,24 +4210,140 @@ function getAmapFitViewConfig(containerId, mapContainer = null) {
   return { ...base, padding };
 }
 
+function isRightRailMapContainer(containerId) {
+  return ["amap-real-map", "doc-amap-real-map", "calendar-amap-real-map", "ultimate-amap-real-map"].includes(containerId);
+}
+
+function getMapFocusContext() {
+  return state.mapPlanner.focusContext || { type: "overview", day: "ALL", category: "all", poiId: null, source: "auto" };
+}
+
+function setMapFocusContext(next = {}, options = {}) {
+  const previous = getMapFocusContext();
+  const source = next.source || previous.source || "auto";
+  const isAuto = source === "auto" || source === "scroll";
+  if (isAuto && options.force !== true && Date.now() < Number(state.mapPlanner.userMapInteractionUntil || 0)) return false;
+
+  const focus = {
+    type: next.type || previous.type || "overview",
+    day: next.day ?? previous.day ?? "ALL",
+    dayId: next.dayId ?? previous.dayId ?? null,
+    category: next.category ?? previous.category ?? "all",
+    poiId: next.poiId ?? previous.poiId ?? null,
+    label: next.label ?? previous.label ?? "",
+    source
+  };
+
+  if (focus.type === "poi" && focus.poiId) {
+    const poi = getMapPoiById(focus.poiId);
+    if (poi) {
+      focus.day = Number(poi.day) || focus.day || "ALL";
+      focus.dayId = poi.dayId || focus.dayId || null;
+      focus.label = focus.label || poi.title || "";
+    }
+  }
+
+  if (focus.type === "day" && focus.day !== "ALL") {
+    state.mapPlanner.currentDay = normalizeMapPlannerDay(focus.day);
+  } else if (focus.type === "overview") {
+    state.mapPlanner.currentDay = "ALL";
+  }
+
+  if (focus.type !== "poi") state.mapPlanner.activePoiId = null;
+  else state.mapPlanner.activePoiId = focus.poiId || null;
+
+  state.mapPlanner.focusContext = focus;
+  return true;
+}
+
 function getMapDayFilterForContainer(containerId) {
-  if (containerId === "canvas-amap-real-map" || containerId === "doc-amap-real-map") return "ALL";
+  if (containerId === "canvas-amap-real-map") return state.mapPlanner.currentDay;
+  if (isRightRailMapContainer(containerId)) {
+    const focus = getMapFocusContext();
+    if (["day", "poi"].includes(focus.type) && focus.day !== "ALL") return normalizeMapPlannerDay(focus.day);
+    return "ALL";
+  }
   return state.mapPlanner.currentDay;
 }
 
+function getGuideBlockMapCategory(block) {
+  return { hotels: "hotel", spots: "spot", restaurants: "food", transport: "transport", checklist: "all" }[block] || "all";
+}
+
+function getMapFocusContextLabel(days = getPlanDays()) {
+  const focus = getMapFocusContext();
+  if (focus.type === "poi" && focus.poiId) {
+    const poi = getMapPoiById(focus.poiId, days);
+    return poi ? `已选：${poi.title}` : "已选点位";
+  }
+  if (focus.type === "day" && focus.day !== "ALL") {
+    const day = days.find((item) => Number(item.day) === Number(focus.day));
+    return day ? `正在查看 Day ${day.day}` : `正在查看 Day ${focus.day}`;
+  }
+  if (focus.type === "category") {
+    return { hotel: "酒店清单", spot: "景点清单", food: "餐厅清单", transport: "交通清单" }[focus.category] || "资源清单";
+  }
+  return "全程总览";
+}
+
+function doesPoiMatchMapCategory(poi, category) {
+  if (!category || category === "all") return true;
+  const text = `${poi?.title || ""} ${poi?.detail || ""} ${poi?.category || ""}`;
+  if (category === "hotel") return /(酒店|住宿|入住|民宿|客栈|resort|hotel)/i.test(text);
+  if (category === "food") return /(早餐|午餐|晚餐|餐厅|餐|小吃|美食|咖啡|茶|鱼头|restaurant|cafe)/i.test(text);
+  if (category === "transport") return /(抵达|返回|前往|交通|车站|机场|码头|高铁|火车|巴士|公交|打车|自驾|骑行|游船|船|航班)/i.test(text);
+  if (category === "spot") return !doesPoiMatchMapCategory(poi, "hotel") && !doesPoiMatchMapCategory(poi, "food") && !doesPoiMatchMapCategory(poi, "transport");
+  return true;
+}
+
+function getMapPoisForFocus(days = getPlanDays(), containerId = getActiveAmapContainerId(), dayFilter = getMapDayFilterForContainer(containerId)) {
+  const focus = getMapFocusContext();
+  let pois = getVisibleMapPois(days, dayFilter);
+  if (isRightRailMapContainer(containerId) && focus.type === "category") {
+    const categoryPois = getVisibleMapPois(days, "ALL").filter((poi) => doesPoiMatchMapCategory(poi, focus.category));
+    pois = categoryPois.length ? categoryPois : pois;
+  }
+  if (isRightRailMapContainer(containerId) && focus.type === "poi" && focus.poiId) {
+    const active = getMapPoiById(focus.poiId, days);
+    if (active) {
+      const sameDay = getVisibleMapPois(days, active.day).filter((poi) => poi.id === active.id || !poi.isEstimated);
+      pois = sameDay.length ? sameDay : [active];
+    }
+  }
+  return pois;
+}
+
 function shouldShowTripMapInView() {
-  return (state.view === "doc" || state.view === "canvas" || state.view === "free2")
+  return ["doc", "canvas", "free2", "calendar", "ultimate"].includes(state.view)
     && !isInspirationTrip()
     && state.route.length > 0;
 }
 
 function shouldShowRealAmapMapUI() {
+  // Keep all trip-map views on the same behavior as Free View:
+  // use the real AMap component only after real coordinates are resolved.
+  // Draft map coordinates are screen-space placeholders and must not be
+  // rendered on top of the real AMap tile layer.
   return shouldShowTripMapInView() && shouldUseRealAmapMap(state.mapRoutes.map);
+}
+
+
+function shouldUseRealAmapMapForContainer(containerId, days = getPlanDays()) {
+  if (!shouldShowRealAmapMapUI()) return false;
+  if (!["amap-real-map", "doc-amap-real-map", "calendar-amap-real-map", "ultimate-amap-real-map"].includes(containerId)) return true;
+  const resolvedPoints = Array.isArray(state.mapRoutes.map?.points)
+    ? state.mapRoutes.map.points.filter((point) => isValidGeoCoordinate(point.lng, point.lat))
+    : [];
+  // For right-side rails, use the real basemap as soon as at least one usable
+  // coordinate exists; the itinerary markers are rendered as AMap overlays.
+  return resolvedPoints.length > 0;
 }
 
 function getActiveAmapContainerId() {
   if (state.view === "canvas") return "canvas-amap-real-map";
   if (state.view === "doc") return "doc-amap-real-map";
+  if (state.view === "calendar") return "calendar-amap-real-map";
+  if (state.view === "ultimate") return "ultimate-amap-real-map";
   if (state.view === "free2") return "amap-real-map";
   return "";
 }
@@ -3973,7 +4362,12 @@ function rememberAmapViewState(mapInstance, containerId = getActiveAmapContainer
 function bindAmapViewPersistence(mapInstance, containerId) {
   if (!mapInstance || mapInstance._tripViewBound) return;
   mapInstance._tripViewBound = true;
-  const persist = () => rememberAmapViewState(mapInstance, containerId);
+  const persist = () => {
+    rememberAmapViewState(mapInstance, containerId);
+    if (Date.now() > amapProgrammaticFitUntil) {
+      state.mapPlanner.userMapInteractionUntil = Date.now() + 5000;
+    }
+  };
   mapInstance.on?.("moveend", persist);
   mapInstance.on?.("zoomend", persist);
 }
@@ -4042,7 +4436,8 @@ function updateMapDayFilter(dayFilter, options = {}) {
 }
 
 function scheduleAmapMapRefresh(options = {}) {
-  if (!shouldShowRealAmapMapUI()) {
+  const activeContainerId = getActiveAmapContainerId();
+  if (!shouldUseRealAmapMapForContainer(activeContainerId)) {
     amapMapInstance?.destroy?.();
     amapMapInstance = null;
     return;
@@ -4056,20 +4451,22 @@ function renderAmapMcpMapStage(options = {}) {
   const embedded = options.embedded === true;
   const preview = options.preview === true;
   const minimal = options.minimal === true;
-  const mapElementId = preview
+  const mapElementId = options.mapId || (preview
     ? "canvas-amap-real-map"
     : embedded
-      ? "doc-amap-real-map"
-      : "amap-real-map";
+      ? getActiveAmapContainerId() || "doc-amap-real-map"
+      : "amap-real-map");
   const map = state.mapRoutes.map;
   const hasPoints = Array.isArray(map?.points) && map.points.length;
   const isDraftMap = map?.renderMode === "draft";
-  const useRealMap = shouldShowRealAmapMapUI();
-  const hasRealOverlays = shouldUseRealAmapMap(map);
   const days = getPlanDays();
-  const mapDayFilter = preview || embedded ? "ALL" : state.mapPlanner.currentDay;
-  const pois = getVisibleMapPois(days, mapDayFilter);
+  const useRealMap = shouldUseRealAmapMapForContainer(mapElementId, days);
+  const hasRealOverlays = shouldUseRealAmapMap(map);
+  const mapDayFilter = getMapDayFilterForContainer(mapElementId);
+  const pois = getMapPoisForFocus(days, mapElementId, mapDayFilter);
   const activePoi = getMapPoiById(state.mapPlanner.activePoiId, days);
+  const focusLabel = getMapFocusContextLabel(days);
+  const showFocusLabel = !minimal && !preview && isRightRailMapContainer(mapElementId);
   const coverage = getMapCoverageSummary(map, days);
   const attributionText = isDraftMap
     ? "行程草图 · 等待真实坐标"
@@ -4095,6 +4492,7 @@ function renderAmapMcpMapStage(options = {}) {
           : renderCustomAmapCanvas(map, days, { dayFilter: mapDayFilter })
       }
       ${preview || minimal ? "" : renderMapPlannerControls(days)}
+      ${showFocusLabel ? `<div class="map-focus-badge"><span></span>${escapeHtml(focusLabel)}</div>` : ""}
       ${
         !minimal && state.mapRoutes.loading
           ? `<div class="amap-real-state amap-real-state--compact">点位加载中…</div>`
@@ -4648,7 +5046,10 @@ function parseMapPoiId(id) {
 }
 
 async function initializeAmapMap(options = {}) {
-  const container = document.querySelector("#amap-real-map, #doc-amap-real-map, #canvas-amap-real-map");
+  const activeContainerId = getActiveAmapContainerId();
+  const container = activeContainerId
+    ? document.getElementById(activeContainerId)
+    : document.querySelector("#amap-real-map, #doc-amap-real-map, #calendar-amap-real-map, #ultimate-amap-real-map, #canvas-amap-real-map");
   if (!container) {
     amapMapInstance?.destroy?.();
     amapMapInstance = null;
@@ -4675,7 +5076,9 @@ async function initializeAmapMap(options = {}) {
     const AMap = await loadAmapSdk();
     if (initToken !== amapInitToken) return;
 
-    const liveContainer = document.querySelector("#amap-real-map, #doc-amap-real-map, #canvas-amap-real-map");
+    const liveContainer = activeContainerId
+      ? document.getElementById(activeContainerId)
+      : document.querySelector("#amap-real-map, #doc-amap-real-map, #calendar-amap-real-map, #ultimate-amap-real-map, #canvas-amap-real-map");
     if (!liveContainer || !shouldShowTripMapInView()) return;
 
     rememberAmapViewState(amapMapInstance, liveContainer.id);
@@ -4774,15 +5177,17 @@ function renderAmapOverlays(AMap, mapInstance, options = {}) {
   const dayFilter = options.dayFilter ?? getMapDayFilterForContainer(containerId);
   const days = getPlanDays();
   const showAllDaysOverview = dayFilter === "ALL";
-  const pois = getVisibleMapPois(days, dayFilter)
-    .filter((poi) => !showAllDaysOverview || !poi.isEstimated);
+  const isRightRailMap = ["amap-real-map", "doc-amap-real-map", "calendar-amap-real-map", "ultimate-amap-real-map"].includes(containerId);
+  const pois = getMapPoisForFocus(days, containerId, dayFilter)
+    // Right-side map rails should match the Free View visual reference: keep all trip points
+    // in the all-days overview so the large numbered markers remain visible.
+    .filter((poi) => isRightRailMap || !showAllDaysOverview || !poi.isEstimated);
   const segments = showAllDaysOverview
     ? []
     : filterMapSegmentsByDay(Array.isArray(map?.segments) ? map.segments : [], dayFilter);
   const dayColors = getMapDayColors(days);
   const overlays = [];
   const overlayEntries = [];
-  const hasRealCoords = shouldUseRealAmapMap(map);
   const preserveView = options.preserveView === true;
   const markerLayouts = getAmapMarkerLayouts(pois);
 
@@ -4794,13 +5199,13 @@ function renderAmapOverlays(AMap, mapInstance, options = {}) {
 
   pois.forEach((poi) => {
     const position = poi.coordinates;
-    if (!position) return;
-    if (hasRealCoords && !isValidGeoCoordinate(position[0], position[1])) return;
+    if (!position || !isValidGeoCoordinate(position[0], position[1])) return;
     const layout = markerLayouts.get(poi.id) || {};
     const marker = new AMap.Marker({
       position,
       title: poi.title,
       anchor: "center",
+      zIndex: 300 + Number(poi.sequence || 0),
       offset: layout.offset ? new AMap.Pixel(layout.offset.x, layout.offset.y) : undefined,
       content: renderAmapMarkerContent(poi, dayColors.get(Number(poi.day)) || "#0757ff", {
         compact: showAllDaysOverview || layout.groupSize > 1,
@@ -4809,7 +5214,9 @@ function renderAmapOverlays(AMap, mapInstance, options = {}) {
       })
     });
     marker.on?.("click", () => {
+      setMapFocusContext({ type: "poi", poiId: poi.id, source: "map" }, { force: true });
       updateMapPoiSelection(poi.id);
+      requestHomeRender?.({ preserveMapRail: state.view === "ultimate" });
     });
     overlays.push(marker);
     overlayEntries.push({ overlay: marker, day: Number(poi.day) });
@@ -4818,7 +5225,7 @@ function renderAmapOverlays(AMap, mapInstance, options = {}) {
   segments.filter(shouldDrawRealAmapSegment).forEach((segment) => {
     const path = (Array.isArray(segment.path) && segment.path.length ? segment.path : [segment.origin, segment.destination])
       .map(toAmapLngLat)
-      .filter((point) => point && (!hasRealCoords || isValidGeoCoordinate(point[0], point[1])));
+      .filter((point) => point && isValidGeoCoordinate(point[0], point[1]));
     if (path.length < 2) return;
     const color = dayColors.get(Number(segment.day)) || "#0757ff";
     const isEstimated = isEstimatedAmapSegment(segment);
@@ -4846,6 +5253,7 @@ function renderAmapOverlays(AMap, mapInstance, options = {}) {
   }
 
   if (!preserveView && overlays.length) {
+    amapProgrammaticFitUntil = Date.now() + 900;
     fitAmapMapToTripData(AMap, mapInstance, map, containerId, dayFilter);
   } else if (!preserveView) {
     const mapView = getTripMapView(map);
@@ -4866,7 +5274,7 @@ function renderAmapMarkerContent(poi, color, options = {}) {
   return `
     <button
       type="button"
-      class="trip-map-marker"
+      class="trip-map-marker ${state.mapPlanner.activePoiId === poi.id ? 'is-active' : ''}"
       style="--marker-color: ${color}"
       data-map-marker-poi="${escapeAttr(poi.id || "")}"
       aria-label="${escapeAttr(title)}"
@@ -4932,8 +5340,9 @@ function fitAmapMapToTripData(AMap, mapInstance, map, containerId, dayFilter = "
   const mapContainer = containerId ? document.getElementById(containerId) : null;
   const fit = getAmapFitViewConfig(containerId, mapContainer);
   const sourcePoints = [];
-  getVisibleMapPois(getPlanDays(), dayFilter)
-    .filter((poi) => dayFilter !== "ALL" || !poi.isEstimated)
+  const isRightRailMap = ["amap-real-map", "doc-amap-real-map", "calendar-amap-real-map", "ultimate-amap-real-map"].includes(containerId);
+  getMapPoisForFocus(getPlanDays(), containerId, dayFilter)
+    .filter((poi) => isRightRailMap || dayFilter !== "ALL" || !poi.isEstimated)
     .forEach((poi) => {
       const lngLat = poi.coordinates;
       if (!lngLat || !isValidGeoCoordinate(lngLat[0], lngLat[1])) return;
@@ -5109,6 +5518,45 @@ function renderCityBlock(city) {
   `;
 }
 
+
+function renderDocumentWorkspaceView() {
+  const days = getPlanDays();
+  if (!days.length) {
+    return `
+      <div class="workspace ${state.workspaceEntering ? "workspace--entering" : ""}">
+        ${renderChatPanel()}
+        <section class="editor-pane">
+          ${renderEmptyTripView()}
+        </section>
+      </div>
+    `;
+  }
+  ensureValidMapPlannerState();
+
+  return `
+    <section class="doc-shell" aria-label="文档视图">
+      <div class="doc-shell__workspace">
+        ${renderChatPanel()}
+        <section class="doc-shell__main">
+          ${renderDocumentView()}
+        </section>
+        ${renderDocumentMapRail()}
+        ${state.activeBooking ? `<div class="doc-booking-panel">${renderBookingRail()}</div>` : ""}
+      </div>
+    </section>
+  `;
+}
+
+function renderDocumentMapRail() {
+  return `
+    <aside class="doc-map-rail trip-map-rail" aria-label="文档视图地图">
+      <div class="doc-map-rail__inner trip-map-rail__inner">
+        ${renderAmapMcpMapStage({ embedded: true })}
+      </div>
+    </aside>
+  `;
+}
+
 function renderDocumentView() {
   const days = getPlanDays();
   if (!days.length) return renderEmptyTripView();
@@ -5127,15 +5575,6 @@ function renderDocumentView() {
 
             <div class="doc-field doc-intro">${renderDocumentIntro(doc.intro)}</div>
             ${renderDocumentHeroImage(days)}
-
-            <section class="doc-section doc-section--map">
-              <div class="doc-section__head">
-                <h2 class="doc-canvas__h2">🗺️ 行程地图</h2>
-            </div>
-              <div class="doc-map-embed">
-                ${renderAmapMcpMapStage({ embedded: true })}
-          </div>
-            </section>
 
             <section class="doc-section">
               <div class="doc-section__head">
@@ -7389,6 +7828,9 @@ function resolveActivityBookingActions(day, activity, index) {
 
   const actions = [];
 
+  if (shouldShowRestaurantBooking(activity)) {
+    actions.push({ kind: "restaurants", label: getRestaurantBookingLabel(contextText) });
+  }
   if (shouldShowFlightBooking(day, activity, index)) {
     actions.push({ kind: "flights", label: getFlightBookingLabel(contextText) });
   }
@@ -7419,13 +7861,21 @@ function shouldShowFlightBooking(day, activity, index) {
 function shouldShowHotelBooking(activity) {
   const text = getActivityContextText(activity);
   const title = String(activity?.title || "").trim();
+  const detail = String(activity?.detail || "").trim();
 
   if (isHotelCheckoutContext(text, title)) return false;
   if (isMealAtHotelOnlyContext(text, title)) return false;
 
-  return /(入住|住宿|预订.*酒店|订.*酒店|下榻|过夜|check[- ]?in)/i.test(text)
-    || /^入住/.test(title)
-    || /(办理入住|住宿落点|酒店办理)/.test(text);
+  // Only show “订酒店” when the activity itself is a stay/check-in task.
+  // Scenic or activity cards often mention “之后前往酒店入住” in the detail;
+  // that should not turn a spot card into a hotel booking card.
+  if (/^(入住|住宿|酒店|民宿|客栈|下榻|办理入住|Check[- ]?in)/i.test(title)) return true;
+  if (/(住宿落点|酒店办理|民宿办理|预订.*酒店|订.*酒店|预订.*民宿|订.*民宿|过夜安排)/i.test(title)) return true;
+
+  const titleIsGenericStay = /^(晚上|晚间|夜间|休息|自由活动|返回|返程|收尾)$/.test(title);
+  if (titleIsGenericStay && /(入住|住宿|酒店|民宿|客栈|下榻|过夜|check[- ]?in)/i.test(detail)) return true;
+
+  return false;
 }
 
 function isHotelCheckoutContext(text, title) {
@@ -7438,6 +7888,13 @@ function isMealAtHotelOnlyContext(text, title) {
   const mentionsHotel = /(酒店|民宿|客栈|Hotel)/i.test(combined);
   const hasStayIntent = /(入住|住宿|预订|订.*酒店|过夜|check[- ]?in)/i.test(combined);
   return isMeal && mentionsHotel && !hasStayIntent;
+}
+
+function shouldShowRestaurantBooking(activity) {
+  const text = getActivityContextText(activity);
+  if (shouldShowHotelBooking(activity)) return false;
+  if (/(早餐|早饭|午餐|午饭|晚餐|晚饭|夜宵|宵夜|餐厅|饭店|酒楼|餐馆|美食|小吃|鱼头|鱼汤|土菜|农家菜|咖啡|茶馆|甜品|烧烤|火锅|料理|寻味|用餐|吃)/.test(text)) return true;
+  return false;
 }
 
 function shouldShowTrainBooking(activity) {
@@ -7457,7 +7914,8 @@ function shouldShowTicketBooking(day, activity, index) {
   if (shouldShowFlightBooking(day, activity, index)) return false;
   if (shouldShowTrainBooking(activity)) return false;
   if (shouldShowHotelBooking(activity)) return false;
-  if (/(早餐|午餐|晚餐|餐厅|餐|小吃|美食|咖啡|茶|休整|休息|自由活动|拍照|散步|逛街|购物|市场)/.test(text)) return false;
+  if (shouldShowRestaurantBooking(activity)) return false;
+  if (/(休整|休息|自由活动|拍照|散步|逛街|购物|市场)/.test(text)) return false;
   if (/(市区|街区|商圈|广场|看日出|看日落|打卡)/.test(text) && !/(门票|景区|博物馆|展览|演出|导览|游船|出海)/.test(text)) return false;
   if (/(门票|通票|套票|景区|博物馆|美术馆|展览|乐园|游乐|索道|缆车|观光车|导览|演出|剧场|漂流|温泉|船票|游船|出海|预约|国家公园|文化中心|动物园|水族馆|歌剧院|大堡礁|菲利普岛|蓝山|三姐妹|Scenic World| reef)/i.test(text)) return true;
 
@@ -7478,6 +7936,14 @@ function getFlightBookingLabel(text) {
 
 function getHotelBookingLabel() {
   return "订酒店";
+}
+
+function getRestaurantBookingLabel(text) {
+  if (/(早餐|早饭)/.test(text)) return "找早餐店";
+  if (/(午餐|午饭)/.test(text)) return "找午餐店";
+  if (/(晚餐|晚饭|夜宵|宵夜)/.test(text)) return "找餐厅";
+  if (/(咖啡|茶馆|甜品)/.test(text)) return "找咖啡茶点";
+  return "找餐厅";
 }
 
 function getTrainBookingLabel(text) {
@@ -7514,8 +7980,11 @@ function getActivityCategoryEmoji(category) {
 }
 
 function getActivityTimeRange(time, index) {
+  const value = String(time || "").trim();
+  if (!value) return "待定";
+  if (!/^\d{1,2}:\d{2}$/.test(value)) return value;
   const duration = index === 0 ? 90 : index === 1 ? 120 : 90;
-  return `${time} - ${addMinutes(time, duration)}`;
+  return `${value} - ${addMinutes(value, duration)}`;
 }
 
 function addMinutes(time, minutes) {
@@ -8461,7 +8930,7 @@ function renderNotionGuideBlock(config, guide, days) {
   const budgetSummary = getCanvasBudgetSummary(config.key, guide, days);
   return `
     <article class="notion-block canvas-guide-card notion-block--${config.accent} ${collapsed ? "is-collapsed" : ""}" data-guide-block="${config.key}">
-      <button type="button" class="notion-block__toggle" data-action="toggle-guide-block" data-block="${config.key}" aria-expanded="${!collapsed}">
+      <button type="button" class="notion-block__toggle" data-action="toggle-guide-block" data-block="${config.key}" data-map-label="${escapeAttr(config.title)}" aria-expanded="${!collapsed}">
         <span class="notion-block__emoji" aria-hidden="true">${config.emoji}</span>
         <div class="notion-block__title-copy">
           <strong>${escapeHtml(config.title)}</strong>
@@ -8770,25 +9239,42 @@ function getCalendarVisibleDaySlots(days) {
 
 function getCalendarActivityForPeriod(day, period) {
   const schedule = Array.isArray(day?.schedule) ? day.schedule : [];
-  const tests = {
-    morning: (activity) => {
-      const text = `${activity.time || ""} ${activity.title || ""}`;
-      return /^(0?[6-9]|10|11):/.test(text) || /(上午|早餐|抵达|办理入住|出发)/.test(text);
-    },
-    afternoon: (activity) => {
-      const text = `${activity.time || ""} ${activity.title || ""}`;
-      return /^(12|13|14|15|16):/.test(text) || /(下午|午餐|游船|骑行|自由|景点|游览)/.test(text);
-    },
-    dusk: (activity) => {
-      const text = `${activity.time || ""} ${activity.title || ""}`;
-      return /^(17|18|19):/.test(text) || /(傍晚|日落|晚餐|夜市|夜景)/.test(text);
-    },
-    night: (activity) => {
-      const text = `${activity.time || ""} ${activity.title || ""}`;
-      return /^(20|21|22|23):/.test(text) || /(晚上|夜间|入住|酒店|返回|休息|自由)/.test(text);
-    }
-  };
-  return schedule.find(tests[period]) || schedule[period === "morning" ? 0 : period === "afternoon" ? 1 : period === "dusk" ? 2 : 3] || null;
+  return schedule.find((activity, index) => getCalendarActivityPeriod(activity, index, schedule.length) === period) || null;
+}
+
+function getCalendarActivityPeriod(activity, index, total) {
+  const time = String(activity?.time || "").trim();
+  const title = String(activity?.title || "").trim();
+  const timeText = `${time} ${title}`;
+  const hourMatch = time.match(/(\d{1,2}):\d{2}/);
+  const hour = hourMatch ? Number(hourMatch[1]) : NaN;
+
+  if (Number.isFinite(hour)) {
+    if (hour < 12) return "morning";
+    if (hour < 17) return "afternoon";
+    if (hour < 20) return "dusk";
+    return "night";
+  }
+
+  // Prefer explicit time words from the real itinerary. Avoid broad POI keywords
+  // such as “骑行/景区/游览”, because they made the rhythm board disagree with
+  // the detail timeline.
+  if (/(上午|早上|晨间|早餐|出发)/.test(timeText)) return "morning";
+  if (/(中午|午餐|下午)/.test(timeText)) return "afternoon";
+  if (/(傍晚|黄昏|日落)/.test(timeText)) return "dusk";
+  if (/(晚上|夜间|晚餐|夜市|夜景)/.test(timeText)) return "night";
+
+  // Stay/rest items are the overnight anchor. Keep them in the night row so the
+  // rhythm board always answers “晚上住哪/怎么收尾”, unless an explicit time word
+  // above already placed them elsewhere.
+  if (/(入住|住宿|酒店|民宿|客栈|返回|返程|回程|休息|过夜)/.test(title) && index > 0) return "night";
+
+  // Order fallback mirrors the detail timeline: 3 items => 上午 / 下午傍晚 / 晚上.
+  if (index <= 0) return "morning";
+  if (total <= 3) return index === total - 1 ? "night" : "afternoon";
+  if (index === 1) return "afternoon";
+  if (index === 2) return "dusk";
+  return "night";
 }
 
 function getCalendarPeriodOrder(period) {
@@ -8824,9 +9310,41 @@ function getCalendarPeriodFallback(period) {
   return {
     morning: ["上午", "自然探索"],
     afternoon: ["下午", "湖边放松"],
+    afternoonDusk: ["下午 / 傍晚", "弹性安排"],
     dusk: ["傍晚", "轻松夜晚"],
     night: ["晚上", "休息调整"]
   }[period] || ["待定", "自由安排"];
+}
+
+function getCalendarDisplayActivityForPeriod(day, period) {
+  if (period === "night") {
+    return getCalendarActivityForPeriod(day, period) || createCalendarNightStayActivity(day);
+  }
+  if (period !== "afternoonDusk") return getCalendarActivityForPeriod(day, period);
+
+  const afternoon = getCalendarActivityForPeriod(day, "afternoon");
+  if (afternoon && !shouldHideRepeatedCalendarActivity(day, "afternoon", afternoon)) return afternoon;
+
+  const dusk = getCalendarActivityForPeriod(day, "dusk");
+  if (dusk && !shouldHideRepeatedCalendarActivity(day, "dusk", dusk)) return dusk;
+
+  return afternoon || dusk || null;
+}
+
+function createCalendarNightStayActivity(day) {
+  const stay = String(day?.stay || "").trim();
+  if (!stay || /(住宿待定|待定)/.test(stay)) return null;
+  return {
+    time: "晚上",
+    title: stay,
+    detail: "晚间入住 / 休息调整",
+    isCalendarStayFallback: true
+  };
+}
+
+function shouldHideCalendarDisplayActivity(day, period, activity) {
+  if (period === "afternoonDusk") return false;
+  return shouldHideRepeatedCalendarActivity(day, period, activity);
 }
 
 function renderCalendarRhythmCell(day, period) {
@@ -8834,8 +9352,8 @@ function renderCalendarRhythmCell(day, period) {
     return `<div class="calendar-rhythm-cell calendar-rhythm-cell--empty"><strong>—</strong></div>`;
   }
 
-  const activity = getCalendarActivityForPeriod(day, period);
-  if (shouldHideRepeatedCalendarActivity(day, period, activity)) {
+  const activity = getCalendarDisplayActivityForPeriod(day, period);
+  if (shouldHideCalendarDisplayActivity(day, period, activity)) {
     return `<div class="calendar-rhythm-cell calendar-rhythm-cell--empty calendar-rhythm-cell--merged"><strong>—</strong></div>`;
   }
 
@@ -8908,8 +9426,7 @@ function renderCalendarRhythmBoard(days) {
   const slots = getCalendarVisibleDaySlots(days);
   const rows = [
     { key: "morning", label: "上午", icon: "☼" },
-    { key: "afternoon", label: "下午", icon: "☀" },
-    { key: "dusk", label: "傍晚", icon: "☀" },
+    { key: "afternoonDusk", label: "下午 / 傍晚", icon: "☀" },
     { key: "night", label: "晚上", icon: "☾" }
   ];
 
@@ -9023,7 +9540,7 @@ function renderCalendarMapRail(activeDay) {
   return `
     <aside class="calendar-map-rail trip-map-rail" aria-label="日历地图">
       <div class="calendar-map-rail__inner trip-map-rail__inner">
-        ${renderAmapMcpMapStage({ embedded: true })}
+        ${renderAmapMcpMapStage({ embedded: true, mapId: "calendar-amap-real-map" })}
       </div>
     </aside>
   `;
@@ -9036,17 +9553,29 @@ function getWorkspaceZoom(view) {
 
 function renderWorkspaceZoomControls(view) {
   const zoom = getWorkspaceZoom(view);
+  const isFeedbackVisible = state.workspaceZoomFeedback.visible && state.workspaceZoomFeedback.view === view;
   return `
     <div class="zoom-workspace__toolbar" role="toolbar" aria-label="画布缩放">
       <div class="zoom-workspace__controls">
         <button type="button" data-action="workspace-zoom-out" data-view="${view}" title="缩小" aria-label="缩小画布">−</button>
-        <button type="button" class="zoom-workspace__value" data-action="workspace-zoom-reset" data-view="${view}" title="恢复 100%" aria-label="当前缩放 ${Math.round(zoom * 100)}%，点击恢复">${Math.round(zoom * 100)}%</button>
+        <button type="button" class="zoom-workspace__value ${isFeedbackVisible ? "is-visible" : ""}" data-action="workspace-zoom-reset" data-view="${view}" title="恢复 100%" aria-label="当前缩放 ${Math.round(zoom * 100)}%，点击恢复">${Math.round(zoom * 100)}%</button>
         <button type="button" data-action="workspace-zoom-in" data-view="${view}" title="放大" aria-label="放大画布">＋</button>
         <span class="zoom-workspace__divider" aria-hidden="true"></span>
         <button type="button" data-action="workspace-zoom-overview" data-view="${view}" title="快速查看全局" aria-label="缩放至全局视野">⛶</button>
       </div>
     </div>
   `;
+}
+
+function showWorkspaceZoomFeedback(view, render) {
+  if (!view) return;
+  state.workspaceZoomFeedback = { view, visible: true };
+  if (workspaceZoomFeedbackTimer) window.clearTimeout(workspaceZoomFeedbackTimer);
+  workspaceZoomFeedbackTimer = window.setTimeout(() => {
+    if (state.workspaceZoomFeedback.view !== view) return;
+    state.workspaceZoomFeedback = { view: null, visible: false };
+    if (typeof render === "function") render();
+  }, 2200);
 }
 
 function changeWorkspaceZoom(view, delta, render, focal) {
@@ -9057,8 +9586,13 @@ function setWorkspaceZoom(view, nextValue, render, focal) {
   if (!["free", "canvas", "ultimate"].includes(view)) return;
   const oldZoom = getWorkspaceZoom(view);
   const nextZoom = Math.round(Math.min(1.5, Math.max(0.5, Number(nextValue) || 1)) * 10) / 10;
-  if (nextZoom === oldZoom) return;
+  if (nextZoom === oldZoom) {
+    showWorkspaceZoomFeedback(view, render);
+    if (typeof render === "function") render();
+    return;
+  }
 
+  showWorkspaceZoomFeedback(view, render);
   const panel = document.querySelector(`[data-zoom-workspace="${view}"]`);
   const rect = panel?.getBoundingClientRect();
   const clientX = Number.isFinite(focal?.clientX) ? focal.clientX : rect ? rect.left + rect.width / 2 : 0;
@@ -9087,7 +9621,7 @@ function renderCanvasView() {
   if (activeDay) return renderCanvasDayDetail(activeDay);
 
   return `
-    <section class="view-panel canvas-view canvas-overview zoom-workspace" aria-label="画布视图" data-zoom-workspace="canvas">
+    <section class="view-panel canvas-view canvas-overview zoom-workspace" aria-label="待定视图" data-zoom-workspace="canvas">
       ${renderWorkspaceZoomControls("canvas")}
       <div class="zoom-workspace__surface" style="--workspace-zoom:${getWorkspaceZoom("canvas")}">
         ${renderCanvasTripHeader(days)}
@@ -9683,9 +10217,9 @@ function renderFreeCanvasWorkspaceView() {
 
 function renderFreeCanvasMapRail() {
   return `
-    <aside class="free2-map-rail" aria-label="自由视图地图">
-      <div class="free2-map-rail__inner">
-        ${renderAmapMcpMapStage({ embedded: true })}
+    <aside class="free2-map-rail trip-map-rail" aria-label="自由视图地图">
+      <div class="free2-map-rail__inner trip-map-rail__inner">
+        ${renderAmapMcpMapStage({ embedded: true, mapId: "amap-real-map" })}
       </div>
     </aside>
   `;
@@ -10227,15 +10761,6 @@ function renderNoteEditor(note) {
 function renderChatPanel() {
   return `
     <aside class="chat-pane" aria-label="对话框">
-      <div class="chat-head">
-        <div class="advisor-profile">
-          <span class="advisor-avatar" aria-hidden="true">AI</span>
-          <div>
-            <p class="eyebrow">AI Advisor</p>
-            <h2>Mira Travel Concierge</h2>
-          </div>
-        </div>
-      </div>
       <div class="chat-messages">
         ${state.chat.map(renderChatMessage).join("")}
         ${state.isChatLoading ? `<article class="chat-message chat-message--assistant"><p>DeepSeek 正在思考...</p></article>` : ""}
@@ -10250,16 +10775,152 @@ function renderChatPanel() {
 }
 
 function renderChatMessage(message) {
-  const paragraphs = String(message.text || "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
-  const body = paragraphs.length > 1
-    ? paragraphs.map((line) => `<p>${escapeHtml(line)}</p>`).join("")
-    : `<p>${escapeHtml(message.text)}</p>`;
+  const text = String(message.text || "");
+  const body = message.role === "assistant"
+    ? renderChatMarkdown(text)
+    : renderPlainChatText(text);
 
   return `
     <article class="chat-message chat-message--${message.role}">
       ${body}
     </article>
   `;
+}
+
+function renderPlainChatText(text) {
+  const paragraphs = String(text || "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  return paragraphs.length > 1
+    ? paragraphs.map((line) => `<p>${escapeHtml(line)}</p>`).join("")
+    : `<p>${escapeHtml(text)}</p>`;
+}
+
+function renderChatMarkdown(source) {
+  const text = String(source || "").trim();
+  if (!text) return "<p></p>";
+
+  const lines = text.replace(/\r/g, "").split("\n");
+  const html = [];
+  let paragraph = [];
+  let listItems = [];
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    html.push(`<p>${renderInlineMarkdown(paragraph.join(" "))}</p>`);
+    paragraph = [];
+  };
+
+  const flushList = () => {
+    if (!listItems.length) return;
+    html.push(`<ul class="chat-md-list">${listItems.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</ul>`);
+    listItems = [];
+  };
+
+  const pushHeading = (value) => {
+    flushParagraph();
+    flushList();
+    html.push(`<h3 class="chat-md-heading">${renderInlineMarkdown(value)}</h3>`);
+  };
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      return;
+    }
+
+    const headingMatch = trimmed.match(/^#{1,3}\s+(.+)$/);
+    if (headingMatch) {
+      pushHeading(headingMatch[1]);
+      return;
+    }
+
+    if (isChatMarkdownSectionHeading(trimmed)) {
+      pushHeading(trimmed.replace(/[：:]$/, ""));
+      return;
+    }
+
+    if (isChatMarkdownDayLine(trimmed)) {
+      flushParagraph();
+      flushList();
+      html.push(renderChatDayCard(trimmed));
+      return;
+    }
+
+    const bulletMatch = trimmed.match(/^[-*]\s+(.+)$/);
+    if (bulletMatch) {
+      flushParagraph();
+      listItems.push(bulletMatch[1]);
+      return;
+    }
+
+    paragraph.push(trimmed);
+  });
+
+  flushParagraph();
+  flushList();
+
+  return `<div class="chat-md-flow">${html.join("")}</div>`;
+}
+
+function isChatMarkdownSectionHeading(line) {
+  return /^(每日概览|当前默认假设|默认假设|行程概览|已识别偏好|下一步|你可以继续|说明|问题|建议)[：:]$/.test(line);
+}
+
+function isChatMarkdownDayLine(line) {
+  return /^D(?:ay)?\s*\d+\b/i.test(line);
+}
+
+function renderChatDayCard(line) {
+  const match = line.match(/^(D(?:ay)?\s*\d+)\s*[：:\s]*(.*)$/i);
+  if (!match) return `<p>${renderInlineMarkdown(line)}</p>`;
+
+  const dayLabel = match[1].replace(/day/i, "D").replace(/\s+/g, "").toUpperCase();
+  const body = match[2].trim();
+  const segments = splitChatDaySegments(body);
+  const intro = typeof segments[0] === "string" ? segments.shift() : body;
+
+  return `
+    <section class="chat-day-card">
+      <div class="chat-day-card__head">
+        <span>${escapeHtml(dayLabel)}</span>
+        <p>${renderInlineMarkdown(intro)}</p>
+      </div>
+      ${segments.length ? `
+        <div class="chat-day-card__meta">
+          ${segments.map((segment) => `
+            <div>
+              <strong>${escapeHtml(segment.label)}</strong>
+              <em>${renderInlineMarkdown(segment.value)}</em>
+            </div>
+          `).join("")}
+        </div>
+      ` : ""}
+    </section>
+  `;
+}
+
+function splitChatDaySegments(body) {
+  const source = String(body || "").trim();
+  if (!source) return [];
+
+  const labelPattern = /(重点|住宿建议|住宿|交通|餐饮|提醒|亮点|核心|建议)[：:]/g;
+  const matches = [...source.matchAll(labelPattern)];
+  if (!matches.length) return [source];
+
+  const segments = [];
+  const intro = source.slice(0, matches[0].index).replace(/[；;，,、\s]+$/g, "").trim();
+  if (intro) segments.push(intro);
+
+  matches.forEach((match, index) => {
+    const start = match.index + match[0].length;
+    const end = index + 1 < matches.length ? matches[index + 1].index : source.length;
+    const value = source.slice(start, end).replace(/^[；;，,、\s]+|[；;，,、\s]+$/g, "").trim();
+    if (value) segments.push({ label: match[1], value });
+  });
+
+  return segments;
 }
 
 function renderSmartChatSuggestions() {
@@ -10891,14 +11552,25 @@ function getBookingSearch(active) {
 }
 
 function getFlyAiSearchQuery(active, day) {
+  const cleaned = String(active.query || "")
+    .replace(/^(?:入住|游览|前往|抵达|早餐后前往|午餐[:：]?|晚餐[:：]?|早餐[:：]?)/, "")
+    .replace(/(?:酒店|游览)$/, "")
+    .trim();
   if (active.kind === "hotels") {
     const stay = String(day?.stay || "").replace(/(?:附近|周边|酒店|民宿|客栈)/g, "").trim();
     if (stay && !/(待定|市区|中心区域|交通便利)/.test(stay)) return stay;
+    const preferenceTags = getHotelPreferenceTags(active, day, state.route.find((item) => item.id === active.cityId) || { city: day?.city || "" });
+    const routeHighlights = getDayHotelContextHighlights(day);
+    return [cleaned, ...routeHighlights.slice(0, 2), ...preferenceTags.slice(0, 2)]
+      .filter(Boolean)
+      .join(" ")
+      .replace(/入住酒店/g, "")
+      .trim();
   }
-  return String(active.query || "")
-    .replace(/^(?:入住|游览|前往|抵达|早餐后前往|午餐[:：]?)/, "")
-    .replace(/(?:酒店|游览)$/, "")
-    .trim();
+  if (active.kind === "restaurants") {
+    return cleaned || `${day?.city || "目的地"} 餐厅`;
+  }
+  return cleaned;
 }
 
 function getExplicitDateForDay(dayNumber) {
@@ -10951,12 +11623,12 @@ function applyBookingOption(optionIndex) {
   }
 
   const previous = activityIndex >= 0 ? edit.schedule[activityIndex] : null;
-  const optionName = normalizeStayLabel(option.name, active.kind === "hotels" ? "酒店方案" : "可订方案");
+  const optionName = normalizeStayLabel(option.name, active.kind === "hotels" ? "酒店方案" : active.kind === "restaurants" ? "餐厅方案" : "可订方案");
   const detail = [option.meta, ...(option.tags || []), option.detail, option.price]
     .map((item) => String(item || "").trim())
     .filter(Boolean)
     .join(" · ");
-  const nextTitle = active.kind === "hotels" ? `入住 ${optionName}` : optionName;
+  const nextTitle = active.kind === "hotels" ? `入住 ${optionName}` : active.kind === "restaurants" ? `用餐 ${optionName}` : optionName;
   const nextActivity = {
     ...(previous || { time: "待定" }),
     title: nextTitle,
@@ -11446,7 +12118,7 @@ function ensureBooking(kind, cityId) {
     : {
         booked: false,
         name: `${cityName}${label}方案`,
-        action: kind === "trains" ? "订火车票" : `订${cityName}${label}`,
+        action: kind === "trains" ? "订火车票" : kind === "restaurants" ? "找餐厅" : `订${cityName}${label}`,
         detail: `根据${cityName}行程动线选择合适的${label}。`
       };
   return state.bookings[kind][cityId];
@@ -11798,6 +12470,120 @@ function normalizeAssistantDisplayText(value) {
     .trim();
 }
 
+
+function normalizeTripSummarySentence(value, fallback = "") {
+  return String(value || fallback || "")
+    .replace(/\s+/g, " ")
+    .replace(/[。；;，,\s]+$/g, "")
+    .trim();
+}
+
+function getTripSummaryDestination(days = getPlanDays()) {
+  const names = resolveTripDestinationNames(days, state.tripGuide)
+    .filter((name) => name && !isPlaceholderDestination(name));
+  return names[0] || days[0]?.city || state.route[0]?.city || "目的地";
+}
+
+function isGenericGeneratedReply(text) {
+  const source = String(text || "").trim();
+  if (!source) return true;
+  if (source.length <= 90 && /(已|已经|我已|已为你|已为您).{0,20}(规划|生成|更新|制定).{0,30}(行程|路书|攻略|计划)/.test(source)) return true;
+  if (/^已根据旅行攻略专家建议更新行程。?$/.test(source)) return true;
+  if (/^AI 服务暂时不稳定，已先根据你的请求生成基础行程。?$/.test(source)) return true;
+  return false;
+}
+
+function getDayPlanHighlights(day) {
+  const schedule = Array.isArray(day?.schedule) ? day.schedule : [];
+  const titles = schedule
+    .map((activity) => normalizeTripSummarySentence(activity?.title))
+    .filter((title) => title && !/^(待定|新的安排|自由活动)$/.test(title))
+    .filter((title) => !/^(入住|住宿|返回|返程|离开)/.test(title));
+
+  const unique = [];
+  titles.forEach((title) => {
+    if (!unique.includes(title)) unique.push(title);
+  });
+
+  if (unique.length) return unique.slice(0, 3).join("、");
+  const stops = (Array.isArray(day?.stops) ? day.stops : [])
+    .map((stop) => normalizeTripSummarySentence(stop))
+    .filter(Boolean);
+  if (stops.length) return stops.slice(0, 3).join("、");
+  return normalizeTripSummarySentence(day?.summary, "核心体验与当地动线");
+}
+
+function buildDailyPlanSummaryLines(days = getPlanDays()) {
+  return days.slice(0, 5).map((day) => {
+    const summary = normalizeTripSummarySentence(day.summary);
+    const highlights = getDayPlanHighlights(day);
+    const stay = normalizeTripSummarySentence(day.stay);
+    const suffix = stay && !/(返程|不住宿|待定)/.test(stay) ? `；住宿建议：${stay}` : "";
+    const main = summary || highlights || "按当天节奏安排核心体验";
+    return `D${day.day} ${main}${highlights && !main.includes(highlights) ? `，重点：${highlights}` : ""}${suffix}`;
+  });
+}
+
+function getTripPlanningAssumptionLines(userText = "", days = getPlanDays()) {
+  const source = [collectUserChatText(), userText].filter(Boolean).join(" ");
+  const destination = getTripSummaryDestination(days);
+  const assumptions = [];
+
+  const origin = inferTripOriginCity();
+  if (origin) {
+    assumptions.push(`已按「${origin}出发」理解交通衔接，后续可继续细化高铁/自驾/航班时间。`);
+  } else {
+    assumptions.push(`未提供出发城市，首日先默认从「抵达${destination}」开始，不硬塞跨城交通。`);
+  }
+
+  const budget = parseTripBudgetFromText(source);
+  if (budget) {
+    assumptions.push(`预算先按你提供的「${budget}」控制，住宿和体验会优先匹配这个档位。`);
+  } else {
+    assumptions.push("未提供预算，先按中等舒适型方案安排，后续可改成经济/舒适/高端。 ".trim());
+  }
+
+  const people = parseTripPeopleFromText(source);
+  const preferences = parseTripPreferencesFromText(source);
+  if (people) {
+    assumptions.push(`同行人按「${people}」处理，节奏会尽量避免过度赶路。`);
+  } else if (preferences) {
+    assumptions.push(`已识别偏好：${preferences}；同行人未填写，先按成人休闲游处理。`);
+  } else {
+    assumptions.push("未提供同行人和特殊偏好，先按成人休闲游处理。 ".trim());
+  }
+
+  return assumptions;
+}
+
+function buildGeneratedTripChatText({ assistantReply = "", userText = "", appliedCount = 0, fallbackReason = "" } = {}) {
+  const days = getPlanDays();
+  if (!days.length) return assistantReply || "已根据旅行攻略专家建议更新行程。";
+
+  const totalDays = appliedCount || days.length;
+  const destination = getTripSummaryDestination(days);
+  const style = getTravelStyle(days).label;
+  const title = `我已为你生成「${destination} ${totalDays} 天${style}路书」。`;
+  const intro = !isGenericGeneratedReply(assistantReply)
+    ? normalizeTripSummarySentence(assistantReply)
+    : `这版行程会先把每天怎么玩、住哪里更顺路、交通如何衔接讲清楚。`;
+  const dailyLines = buildDailyPlanSummaryLines(days);
+  const assumptions = getTripPlanningAssumptionLines(userText, days);
+  const shownMoreHint = days.length > dailyLines.length ? `\n其余 ${days.length - dailyLines.length} 天已在左侧行程画布中展开，可继续查看和拖拽调整。` : "";
+  const reason = fallbackReason ? `${fallbackReason}\n\n` : "";
+
+  return [
+    `${reason}${title}`,
+    intro,
+    "每日概览：",
+    ...dailyLines,
+    shownMoreHint.trim(),
+    "当前默认假设：",
+    ...assumptions.map((item) => `- ${item}`),
+    `已生成并展示 ${totalDays} 天行程。你可以继续补充出发城市、预算、同行人、酒店偏好或想避开的安排，我会直接帮你优化到路书里。`
+  ].filter(Boolean).join("\n");
+}
+
 async function sendChatMessage(value, render) {
   const text = value.trim();
   if (!text || state.isChatLoading) return;
@@ -11855,7 +12641,7 @@ async function sendChatMessage(value, render) {
       }
     }
     const assistantText = appliedCount > 0 && !isClarifying
-      ? `${assistantReply || "已根据旅行攻略专家建议更新行程。"}\n\n已生成并展示 ${appliedCount} 天行程。`
+      ? buildGeneratedTripChatText({ assistantReply, userText: text, appliedCount })
       : assistantReply || "DeepSeek 暂时没有返回有效内容。";
     state.chat.push({
       role: "assistant",
@@ -11877,7 +12663,12 @@ async function sendChatMessage(value, render) {
     state.chat.push({
       role: "assistant",
       text: appliedCount > 0
-        ? "AI 服务暂时不稳定，已先根据你的请求生成基础行程。"
+        ? buildGeneratedTripChatText({
+          assistantReply: "AI 服务暂时不稳定，已先根据你的请求生成基础行程。",
+          userText: text,
+          appliedCount,
+          fallbackReason: "AI 服务暂时不稳定，我先根据你的需求生成一版可编辑基础行程。"
+        })
         : error.message || "DeepSeek 暂时不可用，请稍后再试。"
     });
   } finally {
@@ -11907,7 +12698,7 @@ async function sendChatMessage(value, render) {
       state.inspiration.exploring = false;
       state.inspiration.anchor = "";
       state.inspiration.picks = [];
-      if (getPlanDays().length > 0) state.view = "canvas";
+      if (getPlanDays().length > 0) state.view = "ultimate";
     } else if (!hasConfirmedTripPlan() && !shouldBypassInspirationFlow(text, latestAssistantText)) {
       state.inspiration.exploring = true;
       syncInspirationPicks(text, state.tripGuide, latestAssistantText);
@@ -12016,13 +12807,13 @@ function applyAssistantUpdates(updates, userText = "", assistantText = "") {
     ensureDailyStays();
     state.inspiration.exploring = false;
     state.inspiration.anchor = "";
-    state.view = "canvas";
+    state.view = "ultimate";
     state.mapRoutes = { signature: "", loading: false, routesLoading: false, items: [], map: state.mapRoutes.map, error: "" };
     prefetchTripMapAssets();
   } else if (mode === "replace" && getPlanDays().length > 0) {
     state.inspiration.exploring = false;
     state.inspiration.anchor = "";
-    state.view = "canvas";
+    state.view = "ultimate";
     prefetchTripMapAssets();
   }
   if (updates?.guide) {
@@ -12174,7 +12965,7 @@ function replaceRouteFromUpdates(updates) {
   state.activeBooking = null;
   state.ultimateActiveDay = null;
   state.ultimateExpandedDays = new Set();
-  state.bookings = { flights: {}, hotels: {}, tickets: {}, trains: {} };
+  state.bookings = { flights: {}, hotels: {}, tickets: {}, trains: {}, restaurants: {} };
   state.hotelSearches = {};
   state.mapRoutes = { signature: "", loading: false, routesLoading: false, items: [], map: null, error: "" };
   state.mapPlanner = {
@@ -12453,15 +13244,6 @@ function renderUltimateTopbar(days) {
 function renderUltimateChatPanel() {
   return `
     <aside class="ultimate-chat chat-pane" aria-label="对话框">
-      <div class="chat-head">
-        <div class="advisor-profile">
-          <span class="advisor-avatar" aria-hidden="true">AI</span>
-          <div>
-            <p class="eyebrow">AI Advisor</p>
-            <h2>Mira Travel Concierge</h2>
-          </div>
-        </div>
-      </div>
       <div class="chat-messages">
         ${state.chat.map(renderChatMessage).join("")}
         ${state.isChatLoading ? `<article class="chat-message chat-message--assistant"><p>DeepSeek 正在思考...</p></article>` : ""}
@@ -12534,7 +13316,17 @@ function renderUltimateItineraryItem(day, activity, index) {
 
   return `
     <div class="ultimate-itinerary-step">
-      <article class="ultimate-itinerary-card">
+      <article
+        class="ultimate-itinerary-card"
+        draggable="true"
+        data-free-activity="${escapeAttr(activity.title || `activity-${index}`)}"
+        data-free-activity-drop="${escapeAttr(activity.title || `activity-${index}`)}"
+        data-day="${escapeAttr(day.id)}"
+        data-index="${index}"
+        data-action="focus-map-poi"
+        data-poi="${escapeAttr(`poi-${day.id}-${index}`)}"
+        title="点击同步右侧地图；拖拽可调整顺序或移动到其他日期"
+      >
         <figure class="ultimate-itinerary-card__media">
           ${renderTravelImageMarkup({
             imageKey: `ultimate-itinerary-${day.id}-${index}`,
@@ -12862,29 +13654,102 @@ function isMeaningfulUltimateCoreItem(item) {
 }
 
 function getUltimateDayCardTitle(day) {
-  const directTitle = String(day?.focus || day?.title || "").trim();
-  if (directTitle && !isGenericDayTitle(directTitle)) return directTitle;
+  const actionTitle = buildUltimateDayActionTitle(day);
+  if (actionTitle) return actionTitle;
 
   const scheduleTitles = (Array.isArray(day?.schedule) ? day.schedule : [])
     .map((activity) => cleanCanvasItemTitle(activity?.title))
     .filter((title) => title && !isGenericDayTitle(title) && !isGenericMapPoint(title))
     .filter((title) => !/(抵达|到达|入住|酒店|返程|返回|回程|早餐|午餐|晚餐|用餐|休整|自由活动)/.test(title))
     .slice(0, 2);
-  if (scheduleTitles.length) return scheduleTitles.join(" · ");
+  if (scheduleTitles.length) return shortenUltimateDayTitle(scheduleTitles.join(" · "));
+
+  const directTitle = String(day?.focus || day?.title || "").trim();
+  if (directTitle && !isGenericDayTitle(directTitle)) return shortenUltimateDayTitle(directTitle);
 
   const stops = (Array.isArray(day?.stops) ? day.stops : [])
     .map((stop) => cleanCanvasItemTitle(stop))
     .filter((stop) => stop && !isGenericMapPoint(stop))
     .slice(0, 2);
-  if (stops.length) return stops.join(" · ");
+  if (stops.length) return shortenUltimateDayTitle(stops.join(" · "));
 
   return `${day?.city || "目的地"} Day ${day?.day || ""}`.trim();
+}
+
+function buildUltimateDayActionTitle(day) {
+  const city = normalizeUltimateDayTitlePlace(day?.city);
+  const activities = Array.isArray(day?.schedule) ? day.schedule : [];
+  const coreActivities = activities.filter((activity, index) => {
+    const title = String(activity?.title || "").trim();
+    const category = getActivityCategory(title, index);
+    if (category === "交通") return false;
+    return !/(抵达|到达|入住|酒店|返程|返回|回程|退房|早餐|午餐|晚餐|用餐|休整|自由活动)/.test(title);
+  });
+  const activityText = coreActivities
+    .flatMap((activity) => [activity.title, activity.detail])
+    .filter(Boolean)
+    .join(" ");
+  const stopText = (Array.isArray(day?.stops) ? day.stops : []).join(" ");
+  const sourceText = `${activityText} ${stopText} ${day?.summary || ""}`;
+  const actions = extractUltimateDayActionTokens(sourceText);
+  if (!actions.length) return "";
+
+  const place = city || normalizeUltimateDayTitlePlace(
+    coreActivities.map((activity) => activity?.title).find((title) => title && !isGenericMapPoint(title))
+      || day?.focus
+      || day?.title
+  );
+  const prefix = place && !actions.some((token) => token.includes(place)) ? place : "";
+  return shortenUltimateDayTitle(`${prefix}${actions.join("")}`);
+}
+
+function normalizeUltimateDayTitlePlace(value) {
+  return String(value || "")
+    .replace(/[市县区镇乡]$/g, "")
+    .replace(/核心|中心|城区|市区/g, "")
+    .trim();
+}
+
+function extractUltimateDayActionTokens(text) {
+  const value = String(text || "");
+  const rules = [
+    [/中心湖区|游船|乘船|船票|码头|登岛|上岛|梅峰岛|龙山岛|渔乐岛/, "游船上岛"],
+    [/徒步|步道|登山|爬山|山径|森林步道|栈道|环岛步行/, "徒步"],
+    [/骑行|环湖骑|单车|自行车/, "环湖骑行"],
+    [/观景|观景台|日落|日出|俯瞰|看湖|看海|眺望/, "观景"],
+    [/古城|古镇|老街|历史街区|文化街区|狮城/, "古城漫游"],
+    [/博物馆|美术馆|展览|看展/, "看展"],
+    [/温泉|泡汤/, "泡温泉"],
+    [/漂流|皮划艇|桨板|冲浪|浮潜|潜水/, "水上体验"],
+    [/露营|营地|野餐/, "露营野餐"],
+    [/夜游|夜景|灯光秀|夜市/, "夜游"],
+    [/美食|小吃|餐厅|市场|早茶|咖啡|茶/, "寻味"],
+    [/亲子|乐园|动物园|海洋馆/, "亲子玩乐"],
+    [/摄影|拍照|打卡/, "拍照打卡"]
+  ];
+  const tokens = [];
+  rules.forEach(([pattern, label]) => {
+    if (pattern.test(value) && !tokens.includes(label)) tokens.push(label);
+  });
+  const priority = ["游船上岛", "徒步", "环湖骑行", "古城漫游", "水上体验", "泡温泉", "露营野餐", "夜游", "亲子玩乐", "看展", "寻味", "拍照打卡", "观景"];
+  return tokens
+    .sort((a, b) => priority.indexOf(a) - priority.indexOf(b))
+    .slice(0, 3);
+}
+
+function shortenUltimateDayTitle(title, maxLength = 16) {
+  const compact = String(title || "")
+    .replace(/\s+/g, "")
+    .replace(/[，,。；;：:]/g, "")
+    .replace(/(.{2,}?)\1+/g, "$1")
+    .trim();
+  return compact.length > maxLength ? `${compact.slice(0, maxLength - 1)}…` : compact;
 }
 
 function renderUltimateRail(activeDay, days) {
   return `
     <div class="ultimate-rail__inner trip-map-rail__inner">
-      ${renderAmapMcpMapStage({ embedded: true })}
+      ${renderAmapMcpMapStage({ embedded: true, mapId: "ultimate-amap-real-map" })}
     </div>
   `;
 }

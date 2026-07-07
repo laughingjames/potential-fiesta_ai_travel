@@ -5,7 +5,7 @@ import { readJsonBody, writeJson } from "./http.js";
 
 const execFileAsync = promisify(execFile);
 const flyAiScript = join(process.cwd(), "node_modules", "@fly-ai", "flyai-cli", "dist", "flyai-bundle.cjs");
-const supportedKinds = new Set(["hotels", "flights", "trains", "tickets"]);
+const supportedKinds = new Set(["hotels", "flights", "trains", "tickets", "restaurants"]);
 
 export async function handleFlyAiSearch(req, res) {
   let payload;
@@ -112,6 +112,14 @@ function buildInvocation(kind, payload) {
     return { mode: kind, args };
   }
 
+  if (kind === "restaurants") {
+    requireValue(city, "请先补充目的地，再查询餐厅。");
+    return {
+      mode: "restaurants",
+      args: ["search-poi", "--city-name", city, "--keyword", normalizeRestaurantQuery(query, city)]
+    };
+  }
+
   requireValue(city, "请先补充目的地，再查询门票或体验。");
   if (/(船|游轮|邮轮|出海|轮渡|浮潜)/.test(query)) {
     return {
@@ -130,6 +138,19 @@ function buildHotelSearchArgs({ destName, poiName = "", date = "", checkOutDate 
   if (date) args.push("--check-in-date", date);
   if (checkOutDate) args.push("--check-out-date", checkOutDate);
   return args;
+}
+
+function normalizeRestaurantQuery(query, city = "") {
+  const text = clean(query)
+    .replace(/^(?:早餐|午餐|晚餐|早饭|午饭|晚饭|夜宵|宵夜|用餐|品尝|推荐|找|预订|订)/, "")
+    .replace(/(?:附近|周边|餐厅|饭店|餐馆|美食|用餐|推荐)$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const normalizedText = normalizeSearchToken(text);
+  const normalizedCity = normalizeSearchToken(city);
+  if (!normalizedText || normalizedText === normalizedCity) return "餐厅 美食";
+  if (/^(当地|特色|知名|热门|附近|周边|市区|中心)$/.test(text)) return "餐厅 美食";
+  return `${text} 餐厅`;
 }
 
 function normalizeHotelDestinationName(value) {
@@ -249,6 +270,19 @@ function normalizeItem(mode, raw, index) {
       imageUrl: safeUrl(item.picUrl),
       bookingUrl: safeUrl(item.jumpUrl),
       tags: [clean(segment.seatClassName), clean(journey.journeyType)].filter(Boolean)
+    };
+  }
+
+  if (mode === "restaurants") {
+    return {
+      id: clean(item.id) || `restaurant-${index}`,
+      name: clean(item.name || item.title) || "餐厅方案",
+      meta: [clean(item.scoreDesc), clean(item.star), clean(item.avgPrice || item.price)].filter(Boolean).join(" · ") || "餐厅推荐",
+      detail: clean(item.address) || (Array.isArray(item.tags) ? item.tags.map(clean).filter(Boolean).join(" · ") : ""),
+      price: clean(item.avgPrice || item.price) || "到店咨询",
+      imageUrl: safeUrl(item.mainPic || item.picUrl),
+      bookingUrl: safeUrl(item.jumpUrl),
+      tags: Array.isArray(item.tags) ? item.tags.map(clean).filter(Boolean).slice(0, 4) : []
     };
   }
 
