@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
+import { pathToFileURL } from "node:url";
 import { readJsonBody, writeJson } from "./src/server/http.js";
 import { callMcpTool, readMcpServerConfig } from "./src/server/mcpClient.js";
 import * as imageService from "./src/server/imageService.js";
@@ -82,23 +83,25 @@ function resolvePath(url) {
   return join(root, normalized);
 }
 
-function createAppServer() {
-  return createServer(async (req, res) => {
-    try {
-      if (await routeApiRequest(req, res)) return;
+export async function handleAppRequest(req, res) {
+  try {
+    if (await routeApiRequest(req, res)) return;
 
-      const filePath = resolvePath(req.url || "/");
-      const body = await readFile(filePath);
-      res.writeHead(200, {
-        "Content-Type": contentTypes[extname(filePath)] || "application/octet-stream",
-        ...getCacheHeaders(filePath)
-      });
-      res.end(body);
-    } catch {
-      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end("Not found");
-    }
-  });
+    const filePath = resolvePath(req.url || "/");
+    const body = await readFile(filePath);
+    res.writeHead(200, {
+      "Content-Type": contentTypes[extname(filePath)] || "application/octet-stream",
+      ...getCacheHeaders(filePath)
+    });
+    res.end(body);
+  } catch {
+    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Not found");
+  }
+}
+
+function createAppServer() {
+  return createServer(handleAppRequest);
 }
 
 function getCacheHeaders(filePath) {
@@ -2019,9 +2022,10 @@ function listen(port) {
 }
 
 const serverlessServer = createAppServer();
+const isDirectRun = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 export default serverlessServer;
 
-if (!process.env.VERCEL) {
+if (isDirectRun) {
   listen(preferredPort);
 }
