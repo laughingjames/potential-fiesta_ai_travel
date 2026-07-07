@@ -8957,8 +8957,8 @@ function renderCalendarView(options = {}) {
   const selectedPlanDay = selectedDate ? tripIndex.get(selectedDate) : null;
 
   return `
-    <section class="view-panel calendar-view ${includeMap && state.calendar.mapExpanded ? "calendar-view--map-expanded" : ""}" aria-label="日历视图">
-      <div class="calendar-workspace">
+    <section class="view-panel calendar-view ${includeMap && state.calendar.mapExpanded ? "calendar-view--map-expanded" : ""} ${includeMap ? "" : "calendar-view--no-map"}" aria-label="日历视图">
+      <div class="calendar-workspace ${includeMap ? "" : "calendar-workspace--solo"}">
         <div class="calendar-main">
           <div class="calendar-layout calendar-layout--rhythm ${selectedDate ? "has-detail" : ""}">
             ${renderCalendarRhythmBoard(days)}

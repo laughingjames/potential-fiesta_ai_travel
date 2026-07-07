@@ -923,6 +923,10 @@ strong {
   min-height: 520px;
 }
 
+.calendar-workspace--solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .calendar-main {
   min-width: 0;
 }
