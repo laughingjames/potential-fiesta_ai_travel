@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "node server.mjs",
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "start:prod": "NODE_ENV=production node server.mjs"
+  },
+  "dependencies": {
+    "@fly-ai/flyai-cli": "^1.0.16"
   }
 }

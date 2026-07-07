@@ -1,0 +1,7 @@
+DEPLOY_SERVER=root@1.2.3.4
+REMOTE_DIR=/var/www/trip-planner
+RUN_SETUP=auto
+
+# Optional SSH settings
+# DEPLOY_SSH_PORT=22
+# DEPLOY_IDENTITY_FILE=~/.ssh/tencent-cvm-ai-travel

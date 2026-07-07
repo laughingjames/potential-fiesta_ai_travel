@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "RollingGo-Hotel": {
+      "url": "https://mcp.rollinggo.cn/mcp",
+      "type": "http",
+      "headers": {
+        "Authorization": "Bearer YOUR_ROLLINGGO_HOTEL_KEY"
+      }
+    },
+    "RollingGo-Flight": {
+      "url": "https://mcp.rollinggo.cn/mcp/flight",
+      "type": "http",
+      "headers": {
+        "Authorization": "Bearer YOUR_ROLLINGGO_FLIGHT_KEY"
+      }
+    },
+    "amap-maps-streamableHTTP": {
+      "url": "https://mcp.amap.com/mcp?key=YOUR_AMAP_KEY",
+      "type": "http"
+    }
+  },
+  "_imageProviders": {
+    "amap": "国内景点图：复用上方高德 Key，通过 Web 服务 Place API（extensions=all）拉取 POI 实景图",
+    "unsplash": "海外/兜底高清图：在 .env.local 设置 UNSPLASH_ACCESS_KEY（https://unsplash.com/developers）",
+    "wikimedia": "无 Unsplash Key 时自动使用 Wikimedia Commons 免费图库"
+  }
+}

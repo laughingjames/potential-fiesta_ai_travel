@@ -4,4 +4,7 @@ dist/
 build/
 .env
 .env.*
+.mcp.local.json
+deploy/.deploy.local
+deploy/.ssh/
 npm-debug.log*
