@@ -676,6 +676,30 @@ let requestHomeRender = null;
 const travelImagePendingKeys = new Set();
 const travelImageLoadCache = new Map();
 
+const edgeOnePreviewParamNames = [
+  "eo_time",
+  "eo_token",
+  "eo_signature",
+  "eo_sign",
+  "eo_auth",
+  "eo_preview",
+  "eo_project_id",
+  "eo_deployment_id"
+];
+
+function apiUrl(path) {
+  const raw = String(path || "");
+  if (!raw.startsWith("/api/")) return raw;
+  const url = new URL(raw, window.location.origin);
+  const current = new URLSearchParams(window.location.search || "");
+  edgeOnePreviewParamNames.forEach((name) => {
+    const value = current.get(name);
+    if (value && !url.searchParams.has(name)) url.searchParams.set(name, value);
+  });
+  return `${url.pathname}${url.search}`;
+}
+
+
 export function renderHomeScreen(root) {
   const render = (options = {}) => {
     const viewPanelScrollTop = root.querySelector(".view-panel")?.scrollTop || 0;
@@ -2934,7 +2958,7 @@ async function hydrateInspirationPickCoordinates(render) {
 
   inspirationGeocodePromise = (async () => {
     try {
-      const response = await fetch("/api/amap/geocode", {
+      const response = await fetch(apiUrl("/api/amap/geocode"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -4695,7 +4719,7 @@ async function loadAmapSdk() {
   if (window.AMap) return window.AMap;
   if (amapLoaderPromise) return amapLoaderPromise;
 
-  amapLoaderPromise = fetch(`/api/amap/config?t=${Date.now()}`, { cache: "no-store" })
+  amapLoaderPromise = fetch(apiUrl(`/api/amap/config?t=${Date.now()}`), { cache: "no-store" })
     .then(async (response) => {
       const config = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -7612,12 +7636,12 @@ function isInternationalCity(city = "") {
 }
 
 function getTravelFallbackImageUrl(theme = "coast") {
-  return `/api/travel-image-fallback?theme=${encodeURIComponent(String(theme || "coast").trim().toLowerCase() || "coast")}`;
+  return apiUrl(`/api/travel-image-fallback?theme=${encodeURIComponent(String(theme || "coast").trim().toLowerCase() || "coast")}`);
 }
 
 function getTravelImageProxyUrl(url = "") {
   return /^https:\/\//i.test(String(url || ""))
-    ? `/api/travel-image-proxy?url=${encodeURIComponent(url)}`
+    ? apiUrl(`/api/travel-image-proxy?url=${encodeURIComponent(url)}`)
     : "";
 }
 
@@ -7764,7 +7788,7 @@ async function fetchTravelImages(items, root) {
 
   const loadBatch = async (batch) => {
     try {
-      const response = await fetch("/api/travel-images/resolve", {
+      const response = await fetch(apiUrl("/api/travel-images/resolve"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ items: batch })
@@ -10656,7 +10680,7 @@ async function validateDayOrderAfterMove(render) {
   render();
 
   try {
-    const response = await fetch("/api/deepseek/chat", {
+    const response = await fetch(apiUrl("/api/deepseek/chat"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -10824,7 +10848,7 @@ async function fetchFlyAiOptions(active, render) {
       || getPlanDays().find((item) => item.cityId === active.cityId);
     const date = getExplicitDateForDay(day?.day);
     const checkOutDate = active.kind === "hotels" && date ? addDaysToISODate(date, 1) : "";
-    const response = await fetch("/api/flyai/search", {
+    const response = await fetch(apiUrl("/api/flyai/search"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -11027,7 +11051,7 @@ async function fetchAmapRoutes(render) {
         renderFn?.();
       }
 
-      const markersResponse = await fetch("/api/amap/routes", {
+      const markersResponse = await fetch(apiUrl("/api/amap/routes"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...payload, mapMode: "markers" })
@@ -11052,7 +11076,7 @@ async function fetchAmapRoutes(render) {
 
       if (!shouldLoadRoutes) return;
 
-      const fullResponse = await fetch("/api/amap/routes", {
+      const fullResponse = await fetch(apiUrl("/api/amap/routes"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...payload, mapMode: "full" })
@@ -11477,7 +11501,7 @@ async function submitPlanForm(render) {
   render();
 
   try {
-    const response = await fetch("/api/deepseek/chat", {
+    const response = await fetch(apiUrl("/api/deepseek/chat"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -11807,7 +11831,7 @@ async function sendChatMessage(value, render) {
 
   let appliedCount = 0;
   try {
-    const response = await fetch("/api/deepseek/chat", {
+    const response = await fetch(apiUrl("/api/deepseek/chat"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
